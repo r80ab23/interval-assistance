@@ -1,0 +1,145 @@
+# Testing Strategy — Interval Assistance
+
+**Status:** DRAFT derived from `MASTER_PROMPT.md` (V2). This describes **planned** testing. **No tests have been written or run, and no scientific validation has been performed.** Planned tests and planned validation are not evidence (MANDATED, Section 64).
+
+**Labels:** MANDATED, PROPOSED, OPEN.
+
+---
+
+## 1. Principles
+
+1. **Test every implemented phase before moving on** (MANDATED); a phase is not complete until its tests pass and documentation is updated.
+2. **Domain logic is tested as pure code.** The domain layer has no I/O and takes an injected clock, so tests are fast and deterministic.
+3. **No fabricated expectations.** Expected values for scientific calculations come from (a) definitions in `SCIENTIFIC_SPECIFICATION.md`, (b) worked examples in an approved cited source, or (c) independent hand/analytical calculation documented in the test. Never from running the implementation and pasting its output as "expected".
+4. **Synthetic data only** in the repository, always labelled synthetic (MANDATED). No real athlete data or real CPET reports in Git.
+5. **Unhappy paths are first-class.** The Master Prompt's list of failure cases is covered explicitly (Section 8).
+6. **Provenance and immutability are tested**, not assumed.
+
+---
+
+## 2. Tooling (MANDATED/PROPOSED)
+
+Backend: pytest, pytest-asyncio, Hypothesis; Ruff (lint/format) and Mypy (types) as quality gates. Frontend test runner/tools: OPEN (Phase 1). CI: runs lint, type check and tests on every change (PROPOSED). Coverage thresholds: OPEN; no numeric target is set here. Dependencies are added only when the first test needs them.
+
+Layout (MANDATED): `tests/unit`, `tests/integration`, `tests/property`, `tests/replay`. Synthetic fixtures live under `data/synthetic/` with metadata declaring them synthetic.
+
+---
+
+## 3. Unit tests (MANDATED coverage list)
+
+| Area | What is tested |
+|---|---|
+| HRR | `HRR = HRmax − HRrest`; invalid inputs (HRmax ≤ HRrest, out of range) raise errors |
+| Target calculations | Each intensity mode against the definitions; %HRR form only after its reference is approved |
+| Zone boundaries | lower/upper from tolerance; boundary inclusivity and rounding once specified; manual zone override |
+| Tolerance | Symmetric/asymmetric (if specified), invalid tolerance |
+| State transitions | Every allowed transition; every disallowed transition raises `InvalidStateTransition` |
+| Timing | Phase durations follow protocol timing regardless of HR; fake clock; pause/resume accounting once specified |
+| Event generation | Each event type emitted exactly when specified, with required fields (timestamp, session id, type, HR, phase, interval number, source, metadata) |
+| Signal quality | Each state and detection rule (impossible HR, malformed, duplicate/invalid/out-of-order timestamps, stale, missing, jumps, gaps) with parameters from the approved configuration |
+| Debounce/hysteresis | One noisy sample does not cause a transition; behavior at configured thresholds |
+| Field-test calculations | Only for approved protocols; fixtures from the source's worked examples; protocols with `EQUATION NOT SPECIFIED` must refuse to calculate |
+| Calibration calculations | Application of `a × estimate + b`; fitting method once chosen, verified against independent analytical solutions; error before/after |
+| Provenance | Every derived value has kind, unit, method id/version, inputs; raw rows unchanged after processing |
+| Unit conversion | Each conversion, round trips, unknown units raise `UnitConversionError` |
+| Analytics availability | Metrics return `unavailable` with reasons when data are insufficient; never a default number |
+
+---
+
+## 4. Property-based tests (Hypothesis)
+
+Invariants (MANDATED categories: state transitions, timing, interval completion, zone behavior):
+
+- Any generated sequence of commands and samples never produces an invalid state; terminal states stay terminal.
+- Total elapsed time equals the sum of phase durations on the session clock; HR input never alters phase duration.
+- Interval completion count equals the number of completed work/recovery pairs under each completion mode.
+- `lower ≤ target ≤ upper` for every constructed zone; classification is consistent with bounds.
+- A single out-of-zone sample never changes the debounced zone status (once debounce is specified).
+- Event sequence numbers are strictly increasing; no event without a cause.
+- Unit conversions are monotonic and invertible within tolerance.
+- Event replay reproduces the same final state.
+
+Generators produce synthetic streams only.
+
+---
+
+## 5. Integration tests (MANDATED list)
+
+- Sensor adapter → ingestion (simulator, replay, manual; BLE mock for the adapter contract).
+- Ingestion → engine → events.
+- API → application layer (REST and WebSocket, including auth once defined).
+- Database persistence and migrations (SQLite and PostgreSQL where both are supported); append-only constraints on raw tables.
+- CPET import pipeline against **synthetic, clearly labelled minimal fixtures**; plus verification against real anonymized files, if the project owner provides them, kept outside the public repository.
+- Calibration workflow end to end: import → QC → synchronization → candidate → validation → activation, including rejection and retirement.
+- WebSocket reconnect: snapshot after disconnect; ordering with `seq`.
+
+---
+
+## 6. Replay tests (MANDATED)
+
+Same input stream plus same clock ⇒ same domain events and same results. Replay fixtures are synthetic recordings produced by the deterministic simulator and checked in with their generation seed/parameters. These tests lock down engine behavior and guard against regressions when thresholds or methods are versioned. A change in expected events requires a deliberate method version bump.
+
+---
+
+## 7. Scientific validation (planned, not performed)
+
+Distinct from software testing:
+
+- **Verification of implementation against specification** (automated, as above).
+- **Validation of scientific claims** requires real data and independent reference measurement, and is outside the automated suite. None exists. Any future validation study must be defined (protocol, sample, metrics, acceptance criteria) before data are collected and is reported separately.
+- Until validation is complete, outputs are labelled software/field estimates, research prototype; documentation never claims accuracy figures that have not been measured.
+- Calibration "quality" is reported from measurable quantities only (Scientific Specification 11.4); tests ensure no confidence percentage is produced.
+- Regression datasets (when real anonymized data become available under appropriate consent) are stored outside the public repository.
+
+---
+
+## 8. Data quality and failure-case tests (MANDATED, Section 53)
+
+Each case below has explicit tests at the layer where it is handled:
+
+missing values; duplicated rows; invalid timestamps; impossible HR; gaps; out-of-order samples; invalid units; malformed files; empty datasets; insufficient calibration data; failed QC; calibration worse than baseline (must be reported and must not activate silently); sensor disconnection; recovery from sensor disconnection; pause/resume; early session termination.
+
+Additional (PROPOSED): corrupted XLSX/CSV encodings, very large files, header detection ambiguity, mixed units within a column, duplicate imports of the same file (same hash), clock offsets, extremely long sessions.
+
+---
+
+## 9. Non-functional tests (PROPOSED)
+
+- Latency from sample ingestion to WebSocket delivery under a defined load (targets OPEN).
+- Concurrent sessions soak test (target concurrency OPEN).
+- Security tests: authentication/authorization on every endpoint and the WebSocket; confirmation that logs contain no raw physiological data or identifiers; secrets scanning in CI; checks that no real data files are committed (path/pattern rules).
+- Frontend: component tests for rendering from recorded message streams; tests asserting that UI components contain no physiological calculations; accessibility checks; audio-trigger mapping from events (audio output mocked).
+- Architecture tests: import rules enforcing layer boundaries (domain does not import API/storage/sensor vendors).
+
+---
+
+## 10. Test plan by phase (Master Prompt Section 57)
+
+| Phase | Primary tests |
+|---|---|
+| 1 Foundation | Smoke tests, CI gates, migration up/down, config loading, layer-boundary checks |
+| 2 Sensor abstraction | Adapter contract tests, simulator determinism, validation and signal-quality rules, raw immutability |
+| 3 Interval engine | Unit, property and replay tests for zones, state machine, timing, events |
+| 4 Real-time monitoring | WebSocket integration, snapshot/reconnect, UI rendering from recorded streams |
+| 5 Audio engine | Event-to-cue mapping, warning-pattern timing with fake clock |
+| 6 Session analytics | Metric definitions, availability rules, summary separation of planned/observed/calculated |
+| 7 Field framework | Protocol descriptor validation, refusal when equation unspecified, approved-protocol fixtures |
+| 8 CPET import | Parser, mapping, unit conversion, QC, malformed inputs, synchronization |
+| 9 Calibration | Method tests, lifecycle transitions, before/after error, worse-than-baseline handling |
+| 10 Personalization | Profile history immutability, provenance, override audit |
+| 11 Reporting | CSV content and provenance fields, synthetic labelling |
+| 12 Hardening | Security, privacy, backup/restore |
+| 13 Integration | End-to-end flows with synthetic data, provenance audit across the chain |
+| 14 Release | Documentation consistency checks |
+
+Each phase's acceptance requires its tests to pass and its documentation to be updated.
+
+---
+
+## 11. Open items
+
+1. Frontend testing tools.
+2. Coverage/quality thresholds (none invented here).
+3. Availability of real anonymized lab files for import verification, and the handling procedure outside the public repository.
+4. Latency and concurrency targets.
+5. Whether PostgreSQL-specific behaviors need a PostgreSQL service in CI.
