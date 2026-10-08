@@ -3,6 +3,8 @@
 > **NOT IMPLEMENTED. NOT IN SCOPE FOR THE CURRENT IMPLEMENTATION.**
 > This document describes future possibilities and data requirements only. It contains no design commitments, no model choices, no code, and no dependency requirements. The repository must not require any ML package (`MASTER_PROMPT.md`, Sections 2 and 32).
 
+**Phase 1 note (approved decision):** Phase 1 contains no ML and no ML-specific dependency, table, endpoint, UI element or class; repository guards (see `TESTING_STRATEGY.md`) check that no ML package is introduced. The word "predicted" in the origin category `predicted_by_formula` (HRmax/HRrest) refers to a deterministic formula that is not yet approved; it is unrelated to the reserved future value kind `predicted` below. The README's "Machine learning" contribution item and learning/retraining language are scope drift listed in `README_SCOPE_REVIEW.md`.
+
 ---
 
 ## 1. Current position

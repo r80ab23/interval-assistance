@@ -1385,6 +1385,8 @@ Real-time:
 
 Do not finalize endpoint details until the domain model is defined.
 
+(Phase 1 amendment: only `/api/v1` health/status endpoints exist in Phase 1; none of the resources above is created yet. See `API_SPECIFICATION.md`.)
+
 API schemas must distinguish:
 
 * input
@@ -1802,27 +1804,40 @@ Use phases.
 
 Repository audit and architecture confirmation.
 
+> **AMENDMENT (approved project decision, see `SPECIFICATION_REVIEW.md`).** The Phase 1 / Phase 2 boundary below replaces the original wording of these two phases. Phases 0 and 3–14 are unchanged. Original wording, for the record: Phase 1 = backend, frontend shell, configuration, logging, database, migrations, testing setup; Phase 2 = sensor interface, simulator, raw sample model, validation, signal quality.
+
 ## Phase 1
 
 Project foundation:
 
-* backend
-* frontend shell
-* configuration
+* repository/project skeleton
+* backend foundation (FastAPI app factory)
+* frontend foundation (React, TypeScript, Vite, Vitest; minimal research-prototype shell)
+* configuration/settings (Pydantic Settings)
+* authentication boundary only (dependency seam, development identity, roles coach/athlete/researcher, default deny; no login UI, no password database, no identity provider, no JWT)
 * logging
-* database
-* migrations
-* testing setup
+* `Clock` abstraction and UUID ID generation
+* API skeleton under `/api/v1` (health/status only), typed error envelope, typed response envelopes
+* sensor abstraction: `HeartRateSensor` / `SensorProvider` interfaces, normalized **in-memory** heart-rate sample type, deterministic simulator, manual sensor input
+* SQLAlchemy 2.x foundation and Alembic foundation with an **empty** baseline migration (SQLite for development and CI, PostgreSQL remains the production target)
+* testing infrastructure
+* CI foundation
+* frontend typed API client boundary and health/status view
+* repository guards (no secrets, no real data, no ML dependencies, layer boundaries)
+
+Phase 1 does NOT include any database table for heart-rate samples, ingestion, validation, signal quality, replay, BLE/real sensor transport, any physiological calculation, or any training-session endpoint.
 
 ## Phase 2
 
-Sensor abstraction:
+Sensor data pipeline:
 
-* sensor interface
-* simulator
-* raw sample model
+* raw HR sample persistence (`SensorSample` table)
+* ingestion
 * validation
 * signal quality
+* replay
+* related persistence infrastructure
+* real sensor transport / BLE (only after the Polar H10 and transport items in `ARCHITECTURE.md` are verified)
 
 ## Phase 3
 
@@ -1980,6 +1995,8 @@ docs/IMPLEMENTATION_PLAN.md
 ```
 
 Do not delete audit information merely because implementation begins.
+
+(Note: neither file is currently present in the repository and neither is to be fabricated; see `SPECIFICATION_REVIEW.md`. `SPECIFICATION_REVIEW.md` and `README_SCOPE_REVIEW.md` are additional project documents.)
 
 ---
 

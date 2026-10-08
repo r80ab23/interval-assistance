@@ -4,6 +4,8 @@
 
 **Labels:** MANDATED (Master Prompt), PROPOSED (needs approval), OPEN (unresolved).
 
+**Phase 1 scope (approved decision):** Phase 1 contains the SQLAlchemy 2.x and Alembic foundation with an **empty baseline migration** and no domain tables. In particular **no `SensorSample` table** (raw HR sample persistence is Phase 2). The normalized heart-rate sample is an in-memory type in Phase 1. SQLite is supported for development and CI; PostgreSQL remains the production target. **UUID is the approved identifier strategy.** The entity descriptions below are the target design for later phases. See `SPECIFICATION_REVIEW.md`.
+
 ---
 
 ## 1. Design principles
@@ -72,7 +74,7 @@ Candidate entities from the Master Prompt (Section 33), with disposition.
 | Athlete | **core** | Pseudonymous id; optional link to separate identity record. |
 | Coach | **core** | Owner of protocols/sessions; access control. |
 | Sensor | **core** | Device registry (type, adapter kind, identifier). |
-| SensorSample | **core (raw)** | Append-only raw HR samples. |
+| SensorSample | **core (raw), Phase 2** | Append-only raw HR samples. Not created in Phase 1. |
 | TrainingProtocol | **core** | Versioned definition. |
 | Interval | **merged** into TrainingPhase / protocol structure | An interval is a work+recovery pair; modelled as ordered phases with an interval index rather than a separate table. |
 | TrainingPhase | **core** | Planned phases (in protocol) and actual phase records (in session). |
@@ -127,7 +129,9 @@ A protocol version is immutable once used by a session; edits create a new versi
 
 `SessionPhase(session_id, sequence, phase_type, interval_index, planned_duration, started_elapsed, ended_elapsed, started_at, ended_at, resolved_zone_id)`: planned vs. actual stored side by side so summaries can separate **planned / observed / calculated** (MANDATED).
 
-### 4.6 SensorSample (raw, append-only)
+### 4.6 SensorSample (raw, append-only) — Phase 2
+
+Not implemented in Phase 1. The Phase 1 in-memory sample type carries the same information fields but has no persistence.
 
 | Field | Purpose |
 |---|---|
@@ -269,7 +273,7 @@ Retention and deletion: athlete data-deletion and export obligations depend on j
 1. Attributes collected for athletes (body mass, age, sex, training status) and where each is needed.
 2. Calibration scope and unit of observation (Scientific Specification 11.3).
 3. Whether corrections to samples are permitted at all (`SampleCorrection` exists only if so).
-4. Primary key strategy (PROPOSED: UUIDs for externally visible ids; pseudonymous athlete ids not derived from identity).
+4. Primary key strategy: **UUID approved**. Remaining OPEN: UUID version, and that pseudonymous athlete ids must not be derived from identity.
 5. SQLite development parity with PostgreSQL features used (partial unique indexes, JSON types).
 6. Authentication/authorization model and the coach–athlete relationship (one coach per athlete vs many).
 7. Data retention, deletion and export policy under the applicable jurisdiction.
