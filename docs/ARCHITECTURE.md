@@ -70,9 +70,9 @@ Target structure from Master Prompt Section 50. The structure may be adjusted if
 | `schemas/` | Pydantic v2 input/output schemas (value-kind aware) | API / shared |
 | `core/` | Configuration, logging, clock abstraction, error types, IDs | Cross-cutting |
 | `storage/` | SQLAlchemy 2.x models, repositories, Alembic migrations | Infrastructure |
-| `sensors/` | `HeartRateSensor` interface, simulator, replay, manual input, Polar H10 adapter boundary | Infrastructure |
-| `ingestion/` | Raw sample intake, timestamp handling, persistence of raw samples (**Phase 2; not created in Phase 1**) | Application |
-| `signal/` | Validation and signal-quality assessment; recorded corrections (**Phase 2; not created in Phase 1**) | Domain |
+| `sensors/` | `HeartRateSensor` interface, simulator, manual input, Polar H10 adapter boundary (replay is not here: it is an `ingestion/` service, see 7.2) | Infrastructure |
+| `ingestion/` | Raw sample intake, timestamp handling, persistence of raw samples, and the replay service (**Part 2a; not created in Phase 1**) | Application |
+| `signal/` | Validation and signal-quality assessment (**Part 2a; not created in Phase 1**; recorded corrections are not part of Part 2a) | Domain |
 | `intervals/` | Protocol model, zone computation, state machine, timing, events | Domain |
 | `physiology/` | Definitions and calculations (HRR, targets, unit conversion), each method versioned | Domain |
 | `analytics/` | Session metrics, availability rules, summaries | Domain |
@@ -109,6 +109,20 @@ Heart Rate Sensor
 - Events are the only output the UI/audio/storage consume from the engine.
 - Raw samples are persisted before any processing; filtering never replaces raw values.
 - If a correction or interpolation is applied, it is recorded (original value, corrected value, method, timestamp, reason, processing version). No silent repair.
+
+### 5.1a Part 2a pipeline definitions (decided)
+
+Part 2a implements only: adapter, ingestion (raw persistence), validation, signal quality. Nothing downstream of signal quality exists in Part 2a (no interval engine, analytics or events).
+
+- **Raw-first and no silent loss.** Every sample delivered to ingestion (by an adapter, or by the replay service) is persisted as a `SensorSample` exactly as received, **including malformed input** (null value, retained `raw_payload`). Persistence is committed before validation and signal quality run. Nothing a sensor delivered is dropped, repaired or overwritten. Non-finite values (NaN, +Infinity, -Infinity) are stored as a class marker with a NULL value (`DATA_MODEL.md` 4.6), so they survive SQLite and replay.
+- **Invalid samples are assessed, not rejected.** A sample that fails validation receives a `SignalAssessment` with state `INVALID` and reason codes. The assessment is the record that it is invalid. Downstream consumers (Phase 3 onward) must treat `INVALID` samples as unusable; Part 2a has no consumers.
+- **`InvalidSensorSample` is narrow.** It is raised only when the *delivery contract* is broken so that no raw record can be made: unknown or closed recording session, sensor not belonging to the session, or a receive time that is not timezone-aware UTC. It is never raised because a heart-rate *value* is implausible or malformed (those are assessed). A value that cannot be parsed by an adapter is still delivered as a sample with a null value and its payload.
+- **Validation** (stateless, per sample): is the delivery usable as a value and a time. Reason codes: `malformed_sample`, `missing`, `impossible_hr`, `invalid_timestamp`. Any validation finding yields `INVALID`.
+- **Signal quality** (stateful, over a recording session in sequence order, plus explicit evaluation at a supplied time): is the stream behaving as a stream. Reason codes: `duplicate_timestamp`, `out_of_order_timestamp`, `implausible_jump`, `gap`, `stale`. These produce a per-sample assessment (duplicate, out-of-order, jump) or a time-range assessment (`gap`: closed range between two received samples; `stale`: open range from the last received sample up to the evaluation time).
+- **Not in Part 2a:** filtering, interpolation, correction, smoothing, analytics, any physiological interpretation. `SampleCorrection` is not created. Flag, do not repair.
+- **Evaluation is explicit and clock-injected.** `stale` evaluation is a function called with an explicit `now` supplied from the injected `Clock`; Part 2a includes no background scheduler or thread.
+- **Time axis for stateful checks:** `received_at` (adapter-observed receive time, preserved through persistence and replay) for `gap` and `stale`; duplicate and out-of-order timestamp checks use `device_timestamp` when present and `received_at` otherwise. Rules and configuration: `SCIENTIFIC_SPECIFICATION.md` 5.1.
+- **Concurrency:** one recording session is ingested serially in arrival order (`sequence`); database access in Part 2a uses the synchronous SQLAlchemy sessions already in Phase 1.
 
 ### 5.2 Audio
 
@@ -150,23 +164,25 @@ Rules:
 
 Normalized sample emitted by every adapter (PROPOSED fields): value as received, device timestamp (nullable), adapter-observed receive time, sensor id, source kind (`real | simulated | replay | manual`), `is_synthetic` flag, optional adapter-supplied quality hint. Raw payload bytes retained where an adapter has them.
 
+**Part 2a amendment (decided, `SPECIFICATION_REVIEW.md` Section 12):** the in-memory sample type gains an optional `raw_payload` (bytes) and its value becomes nullable (`received_hr: float | None`), so malformed input can be represented without loss. The Phase 1 invariant "non-real sources are synthetic" is narrowed to `simulated` and `manual`; a `replay` sample inherits `is_synthetic` from the sample it replays. The field-by-field mapping to `SensorSample` is in `DATA_MODEL.md` 4.6.
+
 ### 7.2 Implementations
 
 | Adapter | Status |
 |---|---|
 | Simulator | Deterministic synthetic HR streams; speeds 1x/5x/20x; every sample flagged synthetic (MANDATED). **Phase 1**, in-memory only (not persisted). |
-| Replay | Replays stored sessions deterministically; carries the original provenance, flagged as replay. **Phase 2** (requires persisted samples). |
+| Replay | **Decided: an ingestion/replay service, not a `HeartRateSensor` adapter** (`ingestion/replay.py`). It reads the stored samples of an origin recording session and ingests them into a new `replay` recording session through the normal ingestion path, linking each sample to its origin and preserving provenance. Rationale: it must read persistence and attach `origin_sample_id`, which the sensor contract has no carrier for, and `sensors/` may not import storage. **Part 2a** (requires persisted samples). |
 | Manual input | Coach/developer-entered HR; flagged `manual`. **Phase 1**, in-memory only. |
-| Polar H10 | **Boundary only; not implemented in Phase 1 or Phase 2 planning.** See 7.3. |
+| Polar H10 / real BLE transport | **Boundary only in Phase 1 and Part 2a. Part 2b** (separately gated, after verification and approval). See 7.3. |
 
-The normalized sample in 7.1 is an in-memory domain/contract type in Phase 1. It has no database table until Phase 2 (`SensorSample`, `DATA_MODEL.md` 4.6).
+The normalized sample in 7.1 is an in-memory domain/contract type in Phase 1. It has no database table until Part 2a (`SensorSample`, `DATA_MODEL.md` 4.6).
 
 ### 7.3 Polar H10 boundary
 
 - Phase 1 contains no Polar code: no Polar SDK, no BLE transport, no browser Bluetooth, no proprietary Polar characteristics, and no RR-interval, ECG or accelerometer assumptions. The generic `HeartRateSensor` abstraction with simulator and manual adapters is sufficient for Phase 1.
 - No Polar API behavior is specified here. Nothing in this repository may assume Polar-specific capabilities (data fields, SDK calls, undocumented characteristics).
 - The only candidate interface currently identified is the standard Bluetooth GATT Heart Rate Service, which Bluetooth SIG publishes as a standard. **Whether the Polar H10 exposes the needed data through it, and what it carries, is UNVERIFIED** and must be checked against the Bluetooth SIG specification and Polar's official documentation before the adapter is built.
-- **OPEN (blocks Phase 2 real hardware work):** transport path. Browser Web Bluetooth, a native/mobile app, or a local bridge process are different architectures, and browser support varies by platform (**verify current support**). The adapter boundary is designed so the choice does not change the domain.
+- **OPEN (blocks Part 2b real hardware work; does not block Part 2a):** transport path. Browser Web Bluetooth, a native/mobile app, or a local bridge process are different architectures, and browser support varies by platform (**verify current support**). The adapter boundary is designed so the choice does not change the domain.
 
 ---
 
@@ -279,7 +295,7 @@ Findings from comparing the existing documents against the Master Prompt:
 |---|---|
 | 0 Audit and architecture confirmation | 0 |
 | 1 Foundation (amended: includes sensor abstraction, simulator, manual input) | 1 (plus the domain-model skeleton of 2) |
-| 2 Sensor data pipeline (amended: persistence, ingestion, validation, signal quality, replay, transport) | 3 (plus ingestion/signal parts of 5) |
+| 2 Sensor data pipeline (amended: Part 2a persistence, ingestion, validation, signal quality, replay; Part 2b real transport, separately gated) | 3 (plus ingestion/signal parts of 5) |
 | 3 Interval engine | 4 |
 | 4 Real-time monitoring | 5, 6 (live parts), 7 |
 | 5 Audio engine | part of 7 |

@@ -41,12 +41,12 @@ This boundary amends Master Prompt Section 57 (Phases 1 and 2 only; all other ph
 - signal quality
 - replay
 - related persistence infrastructure
-- real sensor transport / BLE
+- real sensor transport / BLE (**Part 2b**, separately gated; the rest is **Part 2a**; see Section 12)
 
 **Consequences**
 
 - No `SensorSample` table in Phase 1. The in-memory sample type is a domain contract, not persistence.
-- Replay is Phase 2. The interval engine is Phase 3 or later.
+- Replay is Part 2a. The interval engine is Phase 3 or later.
 - Physiological calculations, field VO₂max, CPET, calibration and personalization are later phases.
 - ML is completely out of scope.
 - No physiological or training-session endpoints in Phase 1; only `/api/v1` health/status.
@@ -88,6 +88,8 @@ Not implemented or inferred in Phase 1; each remains "requires scientific verifi
 - personalized-zone derivation; any scientifically derived physiological score
 
 ## 8. Remaining OPEN items
+
+(Status update: items 1-6 and 8 below were resolved in Section 11; items 7 and 9 remain open. Phase 2 items are in Section 12.)
 
 Phase 1 relevant (decide when scaffolding reaches them; not blockers for the boundary):
 
@@ -150,3 +152,46 @@ Technical choices made for items that were OPEN (smallest conservative option; n
 | License | Not chosen; the repository owner must decide. |
 
 `README.md` is still unmodified (see `README_SCOPE_REVIEW.md`). Setup and check commands are in `DEVELOPMENT.md`.
+
+## 12. Phase 2 reconciliation (Part 2a / Part 2b)
+
+Resolves the blockers found by the Phase 2 specification audit. Documentation only; no code, migration or dependency accompanies it. It amends Master Prompt Section 57 (Phase 2) and supersedes the Phase 2 wording in Sections 1 and 8 above.
+
+### 12.1 Decisions
+
+| # | Topic | Decision | Where |
+|---|---|---|---|
+| 1 | Phase boundary | **Part 2a** = persistence, ingestion, validation, signal quality, replay. **Part 2b** = real BLE/Polar transport, separately gated on verifying the Polar H10 interface and approving the transport path. Contradictory wording removed (`ARCHITECTURE.md` 7.2, 7.3; Master Prompt Section 57). | MASTER_PROMPT 57, ARCHITECTURE 7 |
+| 2 | Invalid samples | Raw-first: every delivered sample is persisted exactly as received, malformed ones included (null value, retained payload). Invalid samples receive a `SignalAssessment` with state `INVALID` and reason codes; they are never dropped or repaired. `InvalidSensorSample` is only for delivery-contract violations. | ARCHITECTURE 5.1a |
+| 3 | Sample model | In-memory sample gains nullable `received_hr` and optional `raw_payload`; the "non-real is synthetic" invariant narrows to `simulated` and `manual`; replay inherits `is_synthetic`. Field-by-field mapping to `sensor_sample` (HR, raw payload, device timestamp, `received_at`, ingestion timestamp, elapsed time, quality hint) with nothing discarded. | ARCHITECTURE 7.1, DATA_MODEL 4.6 |
+| 4 | Session identity | New minimal `RecordingSession`: no athlete, protocol, phase or interval semantics; `TrainingSession` (Phase 3) will reference it later; not resumable after a process restart; `elapsed_seconds` is recording-session elapsed time, not a training clock. | DATA_MODEL 4.4a, 4.6 |
+| 5 | Validation vs signal quality | Validation = stateless per-sample (`malformed_sample`, `missing`, `impossible_hr`, `invalid_timestamp`, always `INVALID`). Signal quality = stateful (`duplicate_timestamp`, `out_of_order_timestamp`, `implausible_jump`, `gap`, `stale`). No filtering, interpolation, correction or analytics. | ARCHITECTURE 5.1a, SCIENTIFIC 5.1 |
+| 6 | Tables | Part 2a creates exactly: `sensor`, `recording_session`, `sensor_sample`, `processing_run` (**proposed entity promoted**, documented reason), `signal_assessment`. `ProcessingInput`, `SampleCorrection`, `Athlete`, `Coach`, `TrainingSession` and everything else are not created. | DATA_MODEL top note, 2.2, 3 |
+| 7 | Replay | Replays an origin recording session into a new `replay` session; origin untouched; copies raw fields, links `origin_sample_id`; fixture metadata file with simulator parameters and stream hash; determinism criterion defined. | DATA_MODEL 4.6a, TESTING_STRATEGY 6 |
+| 8 | Thresholds | All numeric values stay OPEN. Mechanism defined: required, default-free, immutable-by-hash `SignalQualityConfig`; snapshot stored per session and per processing run; fixed state-precedence convention. | SCIENTIFIC 5.1 |
+| 9 | API | Part 2a adds no endpoints and no WebSocket; raw-sample reads deferred until access semantics, consent, pagination and large-read handling are decided. | API_SPECIFICATION top note |
+
+Two further points were resolved before commit:
+
+| # | Topic | Decision | Where |
+|---|---|---|---|
+| 10 | Non-finite HR | NaN, +Infinity and -Infinity are stored as a class marker (`received_hr_nonfinite`: `nan`, `+inf`, `-inf`) with `received_hr` NULL, because SQLite stores NaN as NULL and backends differ. The class is preserved exactly; NaN sign/payload bits are not (any raw payload is retained). Always `malformed_sample`/`INVALID`; reproduced by replay; never converted, clipped or dropped. | DATA_MODEL 4.6, SCIENTIFIC 5.1, ARCHITECTURE 5.1a |
+| 11 | Replay shape | Replay is an **ingestion/replay service** (`ingestion/replay.py`), not a `HeartRateSensor` adapter: it reads storage and must attach `origin_sample_id`, and `sensors/` may not import storage. Replay sessions reference a `sensor` row of kind `replay`. | ARCHITECTURE 4, 7.2; MASTER_PROMPT 57; DATA_MODEL 4.6a; TESTING 5, 6 |
+
+### 12.2 Remaining OPEN items
+
+- Numeric values of the signal-quality configuration and the owner's approval of a configuration for real use (blocks real-data use, not implementation).
+- Criteria separating `GOOD`, `ACCEPTABLE` and `POOR` beyond the reason-code mapping.
+- Database-level append-only enforcement for `sensor_sample` (repository-level in Part 2a).
+- PostgreSQL driver, CI service and feature parity (SQLite only in Part 2a); UUID version.
+- Whether correction or interpolation is ever permitted (not in Part 2a).
+- Association of a recording session with an athlete; per-athlete access, consent and raw-sample read API.
+- All of Part 2b: transport path (browser, native, bridge), Polar H10 data availability and sampling behavior, any beat-interval data.
+- Migration numbering convention for `0002` onward; layer-boundary contract names for `ingestion` and `signal`.
+- Retention and deletion policy versus append-only (Phase 12).
+
+### 12.3 Consistency notes
+
+- Documents updated: `MASTER_PROMPT.md`, `ARCHITECTURE.md`, `DATA_MODEL.md`, `SCIENTIFIC_SPECIFICATION.md`, `API_SPECIFICATION.md`, `TESTING_STRATEGY.md`, this file.
+- Unchanged by design: `UI_SPECIFICATION.md`, `FUTURE_ML.md`, `README.md`.
+- Sections 8 items 1-6 and 8 were resolved by Section 11; items 7 and 9 remain.

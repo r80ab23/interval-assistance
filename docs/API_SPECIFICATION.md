@@ -4,6 +4,8 @@
 
 **Labels:** MANDATED, PROPOSED, OPEN.
 
+**Part 2a scope (decided):** Part 2a adds **no API endpoints** and no WebSocket. Reading raw physiological samples is deferred until per-athlete access rules, consent, pagination and large-read handling (all OPEN below) are decided; the three roles alone are not sufficient authorization for raw sample data. `InvalidSensorSample` (422 when exposed) is raised only for delivery-contract violations, never for implausible values (`ARCHITECTURE.md` 5.1a).
+
 **Phase 1 scope (approved decision):** only `/api/v1` health/status endpoint(s), the typed error envelope (Section 6) and typed response envelopes where applicable are implemented. **No physiological, athlete, sensor-sample or training-session endpoints and no WebSocket endpoint are created in Phase 1.** The resource tables in Sections 3 and 4 describe later phases. See `SPECIFICATION_REVIEW.md`.
 
 ---
