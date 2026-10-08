@@ -133,6 +133,36 @@ async def test_manual_sensor_flags_and_clock_stamping() -> None:
     assert all(s.is_synthetic and s.source_kind is SourceKind.MANUAL for s in got)
 
 
+async def test_manual_sensor_restart_keeps_new_run_samples() -> None:
+    """A stop marker left over from a previous run must not end the next run's stream."""
+    sensor = ManualHeartRateSensor(ManualClock(T0), SENSOR_ID)
+    await sensor.connect()
+    await sensor.start()
+    await sensor.stop()  # no consumer drains the queue here
+    await sensor.start()
+    sensor.submit(100)
+
+    stream = sensor.samples()
+    first = await anext(stream)
+    assert first.received_hr == 100
+
+    sensor.submit(101)
+    await sensor.stop()
+    rest = [s async for s in stream]
+    assert [s.received_hr for s in rest] == [101]
+
+
+async def test_manual_sensor_second_run_ends_only_at_its_own_stop() -> None:
+    sensor = ManualHeartRateSensor(ManualClock(T0), SENSOR_ID)
+    await sensor.connect()
+    for value in (1, 2):
+        await sensor.start()
+        sensor.submit(value)
+        await sensor.stop()
+    got = [s.received_hr for s in [x async for x in sensor.samples()]]
+    assert got == [1, 2]
+
+
 def test_sample_invariants() -> None:
     with pytest.raises(ValueError):
         HeartRateSample(SENSOR_ID, SourceKind.REAL, False, 1.0, datetime(2026, 1, 1))

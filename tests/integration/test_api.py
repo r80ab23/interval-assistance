@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from pathlib import Path
+from typing import Annotated
 
+import pytest
 from fastapi import APIRouter
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from interval_assistance.api.app import create_app
-from interval_assistance.api.security import declared_policy
-from interval_assistance.core.auth import Role
+from interval_assistance.api.security import PUBLIC, declared_policy, require_roles
+from interval_assistance.core.auth import Principal, Role
 from interval_assistance.core.clock import ManualClock
 from interval_assistance.core.ids import SequentialIdGenerator
 from tests.conftest import T0, make_settings
@@ -82,19 +85,68 @@ def test_route_without_policy_is_denied_by_default(tmp_path: Path) -> None:
     assert res.json()["error"]["code"] == "permission_denied"
 
 
-def test_unhandled_exception_hides_details(tmp_path: Path) -> None:
-    app = create_app(make_settings(tmp_path))
+def test_unhandled_exception_returns_generic_500_envelope(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    app = create_app(make_settings(tmp_path), id_generator=SequentialIdGenerator(5))
     router = APIRouter()
 
-    @router.get("/boom")
+    @router.get("/boom", dependencies=[PUBLIC])
     def boom() -> None:
-        raise RuntimeError("secret detail")
+        raise RuntimeError("secret detail 150 bpm")
 
     app.include_router(router)
-    with TestClient(app, raise_server_exceptions=False) as c:
+    with caplog.at_level(logging.ERROR), TestClient(app, raise_server_exceptions=False) as c:
         res = c.get("/boom")
-    # Undeclared route is denied before the handler runs; the denial must not leak either.
-    assert "secret detail" not in res.text
+
+    assert res.status_code == 500
+    assert res.json() == {
+        "error": {
+            "code": "internal_error",
+            "message": "internal server error",
+            "details": {},
+            "request_id": str(uuid.UUID(int=5)),
+        }
+    }
+    assert "secret detail" not in res.text and "RuntimeError" not in res.text
+    # The failure is still recorded server-side with its traceback.
+    records = [r for r in caplog.records if r.name == "interval_assistance.api.errors"]
+    assert len(records) == 1 and records[0].exc_info is not None
+
+
+def test_role_not_permitted_is_denied_with_error_envelope(tmp_path: Path) -> None:
+    app = create_app(make_settings(tmp_path, role=Role.ATHLETE))
+    router = APIRouter()
+
+    @router.get("/coach-only")
+    def coach_only(_: Annotated[Principal, require_roles(Role.COACH)]) -> dict[str, str]:
+        return {"reached": "handler"}
+
+    app.include_router(router)
+    with TestClient(app) as c:
+        res = c.get("/coach-only")
+
+    assert res.status_code == 403
+    body = res.json()
+    assert set(body) == {"error"}
+    assert body["error"]["code"] == "permission_denied"
+    assert body["error"]["request_id"]
+    assert "reached" not in res.text
+    # The response does not reveal which role would be accepted.
+    assert "coach" not in res.text.lower()
+
+
+def test_permitted_role_reaches_the_same_route(tmp_path: Path) -> None:
+    app = create_app(make_settings(tmp_path, role=Role.COACH))
+    router = APIRouter()
+
+    @router.get("/coach-only")
+    def coach_only(_: Annotated[Principal, require_roles(Role.COACH)]) -> dict[str, str]:
+        return {"reached": "handler"}
+
+    app.include_router(router)
+    with TestClient(app) as c:
+        assert c.get("/coach-only").json() == {"reached": "handler"}
 
 
 def _api_routes(router: object) -> list[APIRoute]:
