@@ -1,6 +1,8 @@
 # UI Specification — Interval Assistance
 
-**Status:** DRAFT derived from `MASTER_PROMPT.md` (V2). Requirements and behavior only; no visual design, mockups or code yet. Frontend: React and TypeScript (MANDATED as recommended). Supporting libraries are OPEN.
+**Status:** DRAFT derived from `MASTER_PROMPT.md` (V2). Requirements and behavior only; no visual design, mockups or code yet. Frontend: React and TypeScript (MANDATED as recommended). Supporting libraries are OPEN except as decided below.
+
+**Phase 1 scope (approved decision):** React, TypeScript, Vite and Vitest. The Phase 1 frontend is only a minimal research-prototype shell: a status/health view, a role-aware navigation boundary (roles `coach`, `athlete`, `researcher`, using the development identity; no login UI), the research-prototype notice (Section 1, rule 6) and a typed API client boundary. **No state-management library, no charting library, no WebSocket client behavior and no physiological calculations in Phase 1.** Sections 2 to 7 describe later phases. See `SPECIFICATION_REVIEW.md`.
 
 **Labels:** MANDATED, PROPOSED, OPEN.
 
@@ -29,7 +31,7 @@ Purpose: configure and supervise sessions without touching internal technical se
 
 - Athlete selection and a compact athlete profile view.
 - Sensor selection and sensor status (connected, signal quality state, last sample age).
-- HRrest and HRmax, each showing its **origin** (measured in test, observed, entered, predicted); editing requires choosing the origin. No silent defaults from age formulas.
+- HRrest and HRmax, each showing its **origin** (measured in test, observed in session, entered by coach, predicted by formula; "predicted by formula" is a deterministic-formula origin, not ML, and no formula is approved yet); editing requires choosing the origin. No silent defaults from age formulas.
 - Exercise type.
 - Intensity mode: Absolute BPM, %HRmax, %HRR, %VO₂max, Manual zone. %VO₂max is disabled with an explanation while no approved mapping exists (Scientific Specification 3.3).
 - Target and tolerance, with an immediate **zone preview** (lower/target/upper) obtained from the backend, not computed in the browser.
@@ -148,7 +150,7 @@ Athlete list and profile; protocol list/builder; session setup; live session (co
 - React with TypeScript; a typed API client generated from or validated against the OpenAPI contract.
 - State: server state is authoritative; local state limited to presentation. The WebSocket client applies `snapshot` and incremental messages, detects `seq` gaps and requests/awaits a fresh snapshot.
 - No physiological formulas or state-machine logic in components. A lint/review rule and tests assert this (Testing Strategy).
-- Charting library, state library, build tool, component library: OPEN, to be chosen in Phase 1 with justification and minimal dependencies.
+- Build tool and test runner: Vite and Vitest (approved). Charting library, state library, component library: OPEN, to be chosen in the phase that first needs them, with justification and minimal dependencies.
 
 ---
 

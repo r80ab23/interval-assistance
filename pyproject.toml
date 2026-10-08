@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "interval-assistance"
+version = "0.1.0"
+description = "Research-prototype heart-rate interval training assistance (Phase 1 foundation)."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "hypothesis>=6.100",
+    "httpx>=0.27",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "import-linter>=2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+interval_assistance = [
+    "py.typed",
+    "storage/migrations/script.py.mako",
+    "storage/migrations/*.py",
+    "storage/migrations/versions/*.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"
+filterwarnings = ["error::DeprecationWarning:interval_assistance.*"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["alembic.*"]
+ignore_missing_imports = true
+
+[tool.importlinter]
+root_package = "interval_assistance"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "core does not depend on api, storage, sensors or schemas"
+type = "forbidden"
+source_modules = ["interval_assistance.core"]
+forbidden_modules = [
+    "interval_assistance.api",
+    "interval_assistance.storage",
+    "interval_assistance.sensors",
+    "interval_assistance.schemas",
+]
+
+[[tool.importlinter.contracts]]
+name = "sensors are vendor-, transport-, web- and database-free"
+type = "forbidden"
+source_modules = ["interval_assistance.sensors"]
+forbidden_modules = [
+    "interval_assistance.api",
+    "interval_assistance.storage",
+    "fastapi",
+    "sqlalchemy",
+    "bleak",
+]
+
+[[tool.importlinter.contracts]]
+name = "storage does not depend on api or sensors"
+type = "forbidden"
+source_modules = ["interval_assistance.storage"]
+forbidden_modules = ["interval_assistance.api", "interval_assistance.sensors"]

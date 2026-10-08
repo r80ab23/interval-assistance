@@ -4,6 +4,8 @@
 
 **Labels:** MANDATED, PROPOSED, OPEN.
 
+**Phase 1 scope (approved decision):** only `/api/v1` health/status endpoint(s), the typed error envelope (Section 6) and typed response envelopes where applicable are implemented. **No physiological, athlete, sensor-sample or training-session endpoints and no WebSocket endpoint are created in Phase 1.** The resource tables in Sections 3 and 4 describe later phases. See `SPECIFICATION_REVIEW.md`.
+
 ---
 
 ## 1. Principles
@@ -56,7 +58,7 @@ Identifiers are opaque strings (UUID proposed). Timestamps are ISO 8601 UTC. Ela
 
 ### 2.4 Pagination, filtering
 
-OPEN (list endpoints will need it; style to be selected in Phase 1).
+OPEN (list endpoints will need it; Phase 1 has no list endpoints, so the style is deferred to the first phase that adds one).
 
 ---
 
@@ -132,7 +134,16 @@ Commands only: `start`, `pause`, `resume`, `stop`, and `manual_hr` (accepted onl
 
 ## 5. Authentication and authorization boundary
 
-OPEN. Required decisions before Phase 1 completes: authentication mechanism, token handling for WebSocket upgrade (query string tokens leak into logs; header- or first-message-based auth preferred), roles (coach, athlete, researcher/admin), per-athlete access rules, consent handling, and audit logging for sensitive actions. All endpoints and the WebSocket must require authorization once implemented; unauthenticated public endpoints are limited to health checks (PROPOSED).
+**Phase 1 decision (approved):** authentication is an architectural boundary only.
+
+- A dependency/injection seam through which every route obtains the current principal.
+- A development identity supplied by configuration for local development and tests.
+- Three roles: `coach`, `athlete`, `researcher`.
+- **Default deny:** a route without an explicit authorization requirement is denied; public routes (health/status) must be declared explicitly.
+- Not in Phase 1: login UI, password database, production identity provider, JWT (unless a later approved decision requires it).
+- WebSocket authentication is not implemented in Phase 1; only a clean boundary is preserved.
+
+**Still OPEN (later phases):** the production authentication mechanism; token handling for the WebSocket upgrade (query-string tokens leak into logs; header- or first-message-based auth preferred); per-athlete access rules; whether `researcher` is distinct from an admin role; consent handling; audit logging for sensitive actions. All endpoints and the WebSocket must require authorization once implemented; unauthenticated public endpoints are limited to health checks (PROPOSED).
 
 Direct identifiers, if stored, are exposed only through a dedicated restricted endpoint (PROPOSED).
 

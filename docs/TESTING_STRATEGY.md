@@ -19,7 +19,7 @@
 
 ## 2. Tooling (MANDATED/PROPOSED)
 
-Backend: pytest, pytest-asyncio, Hypothesis; Ruff (lint/format) and Mypy (types) as quality gates. Frontend test runner/tools: OPEN (Phase 1). CI: runs lint, type check and tests on every change (PROPOSED). Coverage thresholds: OPEN; no numeric target is set here. Dependencies are added only when the first test needs them.
+Backend: pytest, pytest-asyncio, Hypothesis; Ruff (lint/format) and Mypy (types) as quality gates. Frontend: Vitest (approved Phase 1 decision). CI: runs lint, type check and tests on every change (PROPOSED). Coverage thresholds: OPEN; no numeric target is set here. Dependencies are added only when the first test needs them.
 
 Layout (MANDATED): `tests/unit`, `tests/integration`, `tests/property`, `tests/replay`. Synthetic fixtures live under `data/synthetic/` with metadata declaring them synthetic.
 
@@ -75,7 +75,9 @@ Generators produce synthetic streams only.
 
 ---
 
-## 6. Replay tests (MANDATED)
+## 6. Replay tests (MANDATED) — Phase 2
+
+Replay is a Phase 2 feature; no replay tests exist in Phase 1. Simulator determinism (Section 10, Phase 1 row) is the Phase 1 precursor.
 
 Same input stream plus same clock ⇒ same domain events and same results. Replay fixtures are synthetic recordings produced by the deterministic simulator and checked in with their generation seed/parameters. These tests lock down engine behavior and guard against regressions when thresholds or methods are versioned. A change in expected events requires a deliberate method version bump.
 
@@ -117,8 +119,8 @@ Additional (PROPOSED): corrupted XLSX/CSV encodings, very large files, header de
 
 | Phase | Primary tests |
 |---|---|
-| 1 Foundation | Smoke tests, CI gates, migration up/down, config loading, layer-boundary checks |
-| 2 Sensor abstraction | Adapter contract tests, simulator determinism, validation and signal-quality rules, raw immutability |
+| 1 Foundation (amended) | Smoke tests, CI gates, config loading, layer-boundary checks; migration up/down on the empty baseline verifying that **no Phase 2 tables** (e.g. `SensorSample`) exist; health/status and error-envelope tests; default-deny authorization and role tests with the development identity; `Clock` and UUID generation tests; `HeartRateSensor` contract tests for the simulator and manual adapters; simulator determinism (same seed, same stream); in-memory sample flagging (`is_synthetic`, `source_kind`); frontend (Vitest) tests of the health/status view, role-aware navigation boundary, research-prototype notice and typed client; repository guards (no secrets, no real data files, no ML dependencies). No physiological-calculation tests exist because none are implemented. |
+| 2 Sensor data pipeline (amended) | Raw persistence and immutability, ingestion, validation and signal-quality rules, replay determinism, transport adapter contract tests |
 | 3 Interval engine | Unit, property and replay tests for zones, state machine, timing, events |
 | 4 Real-time monitoring | WebSocket integration, snapshot/reconnect, UI rendering from recorded streams |
 | 5 Audio engine | Event-to-cue mapping, warning-pattern timing with fake clock |
@@ -138,7 +140,7 @@ Each phase's acceptance requires its tests to pass and its documentation to be u
 
 ## 11. Open items
 
-1. Frontend testing tools.
+1. Frontend testing tools: resolved for Phase 1 (Vitest); component-testing and accessibility tooling remain OPEN.
 2. Coverage/quality thresholds (none invented here).
 3. Availability of real anonymized lab files for import verification, and the handling procedure outside the public repository.
 4. Latency and concurrency targets.

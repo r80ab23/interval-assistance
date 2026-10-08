@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/coverage/
+*.tsbuildinfo
+
+# Environment and secrets (only .env.example is tracked)
+.env
+.env.*
+!.env.example
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Real or generated data must never be committed; only data/synthetic is tracked
+data/raw/
+data/processed/
+data/exports/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

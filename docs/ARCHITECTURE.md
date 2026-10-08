@@ -1,6 +1,6 @@
 # Architecture — Interval Assistance
 
-**Status:** DRAFT specification baseline, derived from `MASTER_PROMPT.md` (V2). Not yet reviewed or accepted. No code exists.
+**Status:** DRAFT specification baseline, derived from `MASTER_PROMPT.md` (V2). Phase 1 decisions approved and recorded in `SPECIFICATION_REVIEW.md`; remaining items stay labelled OPEN. No code exists.
 
 **Labels used in this document**
 
@@ -71,8 +71,8 @@ Target structure from Master Prompt Section 50. The structure may be adjusted if
 | `core/` | Configuration, logging, clock abstraction, error types, IDs | Cross-cutting |
 | `storage/` | SQLAlchemy 2.x models, repositories, Alembic migrations | Infrastructure |
 | `sensors/` | `HeartRateSensor` interface, simulator, replay, manual input, Polar H10 adapter boundary | Infrastructure |
-| `ingestion/` | Raw sample intake, timestamp handling, persistence of raw samples | Application |
-| `signal/` | Validation and signal-quality assessment; recorded corrections | Domain |
+| `ingestion/` | Raw sample intake, timestamp handling, persistence of raw samples (**Phase 2; not created in Phase 1**) | Application |
+| `signal/` | Validation and signal-quality assessment; recorded corrections (**Phase 2; not created in Phase 1**) | Domain |
 | `intervals/` | Protocol model, zone computation, state machine, timing, events | Domain |
 | `physiology/` | Definitions and calculations (HRR, targets, unit conversion), each method versioned | Domain |
 | `analytics/` | Session metrics, availability rules, summaries | Domain |
@@ -154,13 +154,16 @@ Normalized sample emitted by every adapter (PROPOSED fields): value as received,
 
 | Adapter | Status |
 |---|---|
-| Simulator | Deterministic synthetic HR streams; speeds 1x/5x/20x; every sample flagged synthetic (MANDATED). |
-| Replay | Replays stored sessions deterministically; carries the original provenance, flagged as replay. |
-| Manual input | Coach/developer-entered HR; flagged `manual`. |
-| Polar H10 | **Boundary only.** See 7.3. |
+| Simulator | Deterministic synthetic HR streams; speeds 1x/5x/20x; every sample flagged synthetic (MANDATED). **Phase 1**, in-memory only (not persisted). |
+| Replay | Replays stored sessions deterministically; carries the original provenance, flagged as replay. **Phase 2** (requires persisted samples). |
+| Manual input | Coach/developer-entered HR; flagged `manual`. **Phase 1**, in-memory only. |
+| Polar H10 | **Boundary only; not implemented in Phase 1 or Phase 2 planning.** See 7.3. |
+
+The normalized sample in 7.1 is an in-memory domain/contract type in Phase 1. It has no database table until Phase 2 (`SensorSample`, `DATA_MODEL.md` 4.6).
 
 ### 7.3 Polar H10 boundary
 
+- Phase 1 contains no Polar code: no Polar SDK, no BLE transport, no browser Bluetooth, no proprietary Polar characteristics, and no RR-interval, ECG or accelerometer assumptions. The generic `HeartRateSensor` abstraction with simulator and manual adapters is sufficient for Phase 1.
 - No Polar API behavior is specified here. Nothing in this repository may assume Polar-specific capabilities (data fields, SDK calls, undocumented characteristics).
 - The only candidate interface currently identified is the standard Bluetooth GATT Heart Rate Service, which Bluetooth SIG publishes as a standard. **Whether the Polar H10 exposes the needed data through it, and what it carries, is UNVERIFIED** and must be checked against the Bluetooth SIG specification and Polar's official documentation before the adapter is built.
 - **OPEN (blocks Phase 2 real hardware work):** transport path. Browser Web Bluetooth, a native/mobile app, or a local bridge process are different architectures, and browser support varies by platform (**verify current support**). The adapter boundary is designed so the choice does not change the domain.
@@ -231,6 +234,8 @@ Types listed in Master Prompt Section 10. Required fields: timestamp, session id
 
 - **Database:** PostgreSQL for production; SQLite permitted for development; SQLAlchemy 2.x with Alembic migrations (MANDATED). Schema supports provenance and versioning (`DATA_MODEL.md`). **OPEN:** whether SQLite dev parity is maintained, given feature differences.
 - **Privacy (MANDATED):** minimum necessary data; pseudonymous athlete identifiers; access control; audit trail; safe exports; no secrets in source; `.env.example` instead of real environment files; no real athlete data or real CPET reports in Git; synthetic fixtures only. (PROPOSED) Direct identifiers stored separately from the pseudonymous athlete record.
+- **Database (Phase 1 decision):** SQLite supported for development and fast CI tests; PostgreSQL remains the production target; UUID is the identifier strategy. Phase 1 contains an empty baseline Alembic migration and no physiological or sample tables.
+- **Authentication boundary (Phase 1 decision):** an architectural boundary only: a dependency/injection seam, a development identity, three roles (`coach`, `athlete`, `researcher`) and default-deny authorization. No login UI, no password database, no production identity provider, no JWT. WebSocket authentication is not implemented in Phase 1; the boundary must stay clean enough to add it later (token handling remains OPEN, `API_SPECIFICATION.md` 5).
 - **Configuration:** Pydantic Settings; no credentials in source.
 - **Logging:** structured; must not contain raw physiological data or identifiers.
 - **Errors (MANDATED):** structured domain errors, never swallowed: `InvalidSensorSample`, `InvalidTrainingProtocol`, `InsufficientCalibrationData`, `CalibrationValidationError`, `CPETImportError`, `UnitConversionError`, `SynchronizationError`, `SensorConnectionError`, `InvalidStateTransition`. Invalid physiological data never silently continues through the pipeline.
@@ -254,7 +259,7 @@ All current implementations are deterministic. **No ML classes, stubs, dependenc
 - Backend: Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Pydantic Settings.
 - Scientific/data (add only when first needed): NumPy, Pandas, SciPy, openpyxl.
 - Testing: pytest, pytest-asyncio, Hypothesis. Quality: Ruff, Mypy.
-- Frontend: React, TypeScript; supporting libraries (charting, state, build tool, test runner) to be selected in Phase 1 with justification.
+- Frontend (Phase 1 decision): React, TypeScript, Vite (build tool), Vitest (test runner). No state-management library, no charting library and no WebSocket client behavior in Phase 1; those are chosen in the phase that first needs them.
 - Realtime: WebSocket. Database: PostgreSQL (SQLite dev).
 - Explicitly excluded: any ML package, message broker, container orchestration (unless a demonstrated requirement appears).
 
@@ -268,11 +273,13 @@ Findings from comparing the existing documents against the Master Prompt:
 
 1. **Phase numbering differs.** `IMPLEMENTATION_PLAN.md` (Phase 0 audit) uses 15 phases ordered differently from Master Prompt Section 57. **The Master Prompt numbering is authoritative.** Both preserved files are left unchanged. Mapping:
 
+(Phase 1/2 amendment: the approved boundary in `MASTER_PROMPT.md` Section 57 and `SPECIFICATION_REVIEW.md` supersedes the original Master Prompt Phase 1/2 split. Phase 1 additionally includes the sensor interface, in-memory sample type, simulator and manual input; Phase 2 is raw sample persistence, ingestion, validation, signal quality, replay and real transport. `IMPLEMENTATION_PLAN.md` is not currently present in the repository, so the right-hand column cannot be verified.)
+
 | Master Prompt phase (authoritative) | Corresponding `IMPLEMENTATION_PLAN.md` phase(s) |
 |---|---|
 | 0 Audit and architecture confirmation | 0 |
-| 1 Foundation | 1 (plus the domain-model skeleton of 2) |
-| 2 Sensor abstraction | 3 (plus ingestion/signal parts of 5) |
+| 1 Foundation (amended: includes sensor abstraction, simulator, manual input) | 1 (plus the domain-model skeleton of 2) |
+| 2 Sensor data pipeline (amended: persistence, ingestion, validation, signal quality, replay, transport) | 3 (plus ingestion/signal parts of 5) |
 | 3 Interval engine | 4 |
 | 4 Real-time monitoring | 5, 6 (live parts), 7 |
 | 5 Audio engine | part of 7 |
@@ -287,7 +294,7 @@ Findings from comparing the existing documents against the Master Prompt:
 | 14 Documentation and release | no direct equivalent |
 
 2. **Tech stack and earlier open decisions.** The audit listed backend language/database as open. The Master Prompt now names a preferred stack, resolving that item at the "preferred" level. The BLE transport path remains open.
-3. **ML language in the README.** The audit flagged README wording about models learning and retraining. The Master Prompt confirms ML is out of scope, so that wording must be reinterpreted as deterministic methods or removed. The README has not been modified (not available in this working environment; to be handled in the repository).
+3. **ML language in the README.** The audit flagged README wording about models learning and retraining. The Master Prompt confirms ML is out of scope, so that wording must be reinterpreted as deterministic methods or removed. The README has not been modified; the exact items to correct are listed in `README_SCOPE_REVIEW.md`.
 4. **Calibration fitting.** The audit asked whether deterministic regression-based calibration is in scope as "non-ML". The Master Prompt allows deterministic calibration and statistical calculations "where justified". The fitting method itself is still unspecified (`SCIENTIFIC_SPECIFICATION.md`).
 5. **Prototype.** Per Master Prompt Section 63, the source of `interval_live_chart.html` is not in the repository, so its undocumented implementation details are not assumed or recreated. UX requirements here come from the Master Prompt text only.
 
