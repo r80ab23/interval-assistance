@@ -126,3 +126,27 @@ Master Prompt Sections 50, 60 and 63 and `ARCHITECTURE.md` Section 13 reference 
 - Origin category naming aligned to `predicted_by_formula` (UI spec), distinct from the reserved future value kind `predicted` (`FUTURE_ML.md`).
 - README is **not** modified; its scope drift is catalogued in `README_SCOPE_REVIEW.md`.
 - `SCIENTIFIC_SPECIFICATION.md` is unchanged: its content is consistent with the decisions above.
+
+## 11. Phase 1 implementation record
+
+Technical choices made for items that were OPEN (smallest conservative option; none is a scientific or hardware assumption):
+
+| Item | Choice |
+|---|---|
+| Python | `requires-python >=3.12`; CI uses 3.12; local development verified on 3.14. setuptools, `src` layout. |
+| Node | 22; npm with committed `package-lock.json`; exact dependency versions pinned in `package.json`. |
+| Layer-boundary tool | `import-linter` (contracts in `pyproject.toml`; run in CI). |
+| Repository guards | `tests/unit/test_repository_guards.py` (no ML/BLE/chart/state packages, no `.env`/data/spreadsheet files, no out-of-scope terms in source, no tables, sensors do not log). |
+| UUID version | Version 4 (`UuidGenerator`); deterministic `SequentialIdGenerator` for tests. |
+| Development identity | `IA_DEV_IDENTITY_ENABLED` (default false) and `IA_DEV_IDENTITY_ROLE`; fixed id; rejected in production. Default deny enforced at request time by an app-level dependency requiring every route to declare `PUBLIC` or `require_roles(...)`. |
+| Public routes | `GET /api/v1/health` only. `GET /api/v1/status` requires any of the three roles. |
+| Logging | Standard-library logging with JSON or console format; `SensitiveDataFilter` redacts physiological/identifying field names; sensor adapters do not log. |
+| Simulator | Seeded bounded random walk; bounds, start value and step are required (no defaults, no physiological model); nominal timestamps; speeds 1x/5x/20x scale pacing only. |
+| Sample flags | Simulator and manual samples are `is_synthetic=True`; non-real sources cannot be constructed without the flag. The sample type performs no plausibility checks (Phase 2). |
+| SQLite/PostgreSQL | SQLite in development and CI; PostgreSQL URL accepted and required in production; no PostgreSQL driver installed (OPEN). |
+| API documentation routes | Disabled in production (they bypass default deny). |
+| Frontend API types | Hand-written; backend test pins the exposed paths. A generated client remains OPEN. |
+| Pagination | Not needed in Phase 1; still OPEN. |
+| License | Not chosen; the repository owner must decide. |
+
+`README.md` is still unmodified (see `README_SCOPE_REVIEW.md`). Setup and check commands are in `DEVELOPMENT.md`.
