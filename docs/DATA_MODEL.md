@@ -6,6 +6,8 @@
 
 **Phase 1 scope (approved decision):** Phase 1 contains the SQLAlchemy 2.x and Alembic foundation with an **empty baseline migration** and no domain tables. In particular **no `SensorSample` table** (raw HR sample persistence is Phase 2). The normalized heart-rate sample is an in-memory type in Phase 1. SQLite is supported for development and CI; PostgreSQL remains the production target. **UUID is the approved identifier strategy.** The entity descriptions below are the target design for later phases. See `SPECIFICATION_REVIEW.md`.
 
+**Part 2a scope (decided in `SPECIFICATION_REVIEW.md` Section 12):** Part 2a creates exactly these tables: `sensor`, `recording_session`, `sensor_sample`, `processing_run`, `signal_assessment` (Sections 4.4a, 4.6, 4.7, 2.2). It does **not** create `Athlete`, `Coach`, `TrainingProtocol`, `ProtocolPhase`, `ZoneDefinition`, `TrainingSession`, `SessionPhase`, `TrainingEvent`, `PhysiologicalMeasurement`, `ProcessingInput`, `SampleCorrection`, `AuditLog` or any field-test, laboratory, calibration or profile table. The API is unchanged in Part 2a.
+
 ---
 
 ## 1. Design principles
@@ -30,7 +32,9 @@
 
 `raw` is used for unmodified imported/received data. The remaining five are the Master Prompt's distinctions. (No `predicted` kind exists now; see `FUTURE_ML.md`.)
 
-### 2.2 `ProcessingRun` / provenance record (PROPOSED, core)
+### 2.2 `ProcessingRun` / provenance record (PROPOSED, core; **promoted to required for Part 2a**)
+
+**Decision (Part 2a):** `ProcessingRun` becomes a required table in Part 2a because every `SignalAssessment` is a derived value and must carry method id, method version and parameters (MANDATED provenance). `ProcessingInput` is **not** created in Part 2a: assessments reference their input sample(s) directly (`signal_assessment.sample_id` or the range sample references) and the run references its `recording_session_id`, which is sufficient traceability until runs consume heterogeneous inputs. Two additions to the table below for Part 2a: `recording_session_id` (scope of the run) and `actor` = `system`.
 
 One row per execution of a method that produces derived values.
 
@@ -44,6 +48,14 @@ One row per execution of a method that produces derived values.
 | is_synthetic | whether any input was synthetic |
 
 Input linkage: `ProcessingInput(processing_run_id, input_table, input_id, role)` records which rows were consumed. This answers "where did this value come from?" (MANDATED, Section 23).
+
+**Part 2a lifecycle and ownership (decided).**
+
+- **Creation.** Opening a recording session creates its one `ProcessingRun` in the same transaction as the `recording_session` row (method `signal_assessment`, the method version, and the signal-quality configuration snapshot as `parameters`). A session therefore never exists without its run.
+- **Ownership.** Every `SignalAssessment` produced for that session belongs to this run: per-sample assessments, `gap` ranges written when the later sample arrives, and the close-time `stale` range. Each assessment's `recording_session_id` equals its run's.
+- **Replay sessions** have their own run created when the replay session is opened; replay never copies or reuses the origin session's assessments.
+- **Reassessment is deferred.** Part 2a provides no reassessment operation, so each recording session has exactly one run and "the run to use" is unambiguous. When reassessment is introduced it must create a *new* run with new assessments and never overwrite or delete historical ones; the selection rule in Section 4.7 then applies.
+- **Unassessed samples.** A sample whose assessment was not committed (for example a failure between the raw commit and the assessment commit) has no assessment in the run. Consumers must treat "no assessment" as unassessed, never as `GOOD`. Part 2a does not repair this.
 
 ### 2.3 `PhysiologicalMeasurement` (PROPOSED, core)
 
@@ -73,14 +85,16 @@ Candidate entities from the Master Prompt (Section 33), with disposition.
 |---|---|---|
 | Athlete | **core** | Pseudonymous id; optional link to separate identity record. |
 | Coach | **core** | Owner of protocols/sessions; access control. |
-| Sensor | **core** | Device registry (type, adapter kind, identifier). |
-| SensorSample | **core (raw), Phase 2** | Append-only raw HR samples. Not created in Phase 1. |
+| Sensor | **core, Part 2a** | Device registry (kind, identifier). Part 2a kinds: `simulator`, `manual`, `replay`. |
+| RecordingSession | **core, Part 2a (new)** | Container for one continuous collection of samples; independent of protocols/training (Section 4.4a). |
+| SensorSample | **core (raw), Part 2a** | Append-only raw HR samples. Not created in Phase 1. |
+| ProcessingRun | **core, Part 2a (promoted)** | Provenance of derived values (Section 2.2). |
 | TrainingProtocol | **core** | Versioned definition. |
 | Interval | **merged** into TrainingPhase / protocol structure | An interval is a work+recovery pair; modelled as ordered phases with an interval index rather than a separate table. |
 | TrainingPhase | **core** | Planned phases (in protocol) and actual phase records (in session). |
 | ZoneDefinition | **core** | Target, lower, upper, origin, tolerance, override info. |
 | TrainingSession | **core** | A run of a protocol by an athlete with a sensor. |
-| SignalQuality | **core** (as `SignalAssessment`) | Per-sample quality state and reasons. |
+| SignalQuality | **core, Part 2a** (as `SignalAssessment`) | Per-sample and per-range quality state and reasons. |
 | TrainingEvent | **core** | Domain events (append-only). |
 | PhysiologicalMeasurement | **core** | Section 2.3. |
 | SessionSummary | **merged** | Summary metrics are `PhysiologicalMeasurement` rows tied to a session via a `SessionMetricSet` grouping (deferred if a plain query suffices). |
@@ -129,33 +143,65 @@ A protocol version is immutable once used by a session; edits create a new versi
 
 `SessionPhase(session_id, sequence, phase_type, interval_index, planned_duration, started_elapsed, ended_elapsed, started_at, ended_at, resolved_zone_id)`: planned vs. actual stored side by side so summaries can separate **planned / observed / calculated** (MANDATED).
 
-### 4.6 SensorSample (raw, append-only) — Phase 2
+### 4.4a RecordingSession (Part 2a, decided)
 
-Not implemented in Phase 1. The Phase 1 in-memory sample type carries the same information fields but has no persistence.
+A `RecordingSession` is the minimal container for samples collected from one sensor in one continuous run. It has **no** athlete, coach, protocol, phase, interval, zone or workout semantics; those belong to `TrainingSession` (Phase 3), which will later *reference* a recording session. Part 2a samples never reference a `TrainingSession`.
 
-| Field | Purpose |
-|---|---|
-| id, session_id, sensor_id | identity |
-| sequence | per-session arrival order |
-| received_hr | value exactly as received (nullable if malformed) |
-| raw_payload | original bytes/text where available |
-| device_timestamp | nullable |
-| ingestion_timestamp (UTC) | |
-| elapsed_seconds | monotonic session-clock time at ingestion |
-| source_kind | `real | simulated | replay | manual` |
-| is_synthetic | |
+`RecordingSession(id, sensor_id, source_kind, is_synthetic, started_at, ended_at?, end_reason? [completed | interrupted], signal_quality_config_id, signal_quality_config_version, signal_quality_config_hash, origin_recording_session_id?)`
 
-Never updated. Additional fields from sensors (for example beat-to-beat interval data) are **not assumed**; the table can be extended once an adapter's actual outputs are verified (OPEN, Polar H10 unverified).
+- `source_kind` and `is_synthetic` equal those of every sample in the session (enforced at ingestion); a session has exactly one source kind.
+- `started_at` is the injected `Clock` UTC time at creation. The monotonic origin used for `elapsed_seconds` exists only in the process that created the session, so **a recording session cannot be resumed after a process restart**. A session whose process is gone can only be closed (`end_reason = interrupted`); further data requires a new session.
+- `signal_quality_config_*` record the exact configuration in force (Scientific Specification 5.1), so the session remains interpretable if configuration changes later.
+- `origin_recording_session_id` is set only for replay sessions (Section 4.6a).
+- Closed sessions accept no further samples.
+
+`Sensor(id, kind, external_identifier?, created_at)`: `kind` in Part 2a is constrained to `simulator | manual | replay`; `polar_h10` and `generic_ble_hr` are added by the Part 2b migration. `external_identifier` is not interpreted in Part 2a.
+
+### 4.6 SensorSample (raw, append-only), Part 2a (decided mapping)
+
+Not implemented in Phase 1. The table is the persisted form of the in-memory sample (`ARCHITECTURE.md` 7.1, amended). **No information is discarded, with one documented exception:** a naive `device_timestamp` delivered without a `raw_payload` is stored as NULL and its original value is lost (see the `device_timestamp` row, `ARCHITECTURE.md` 5.1a, and the OPEN item in `SPECIFICATION_REVIEW.md` 12.2). Mapping:
+
+| Column | Source | Notes |
+|---|---|---|
+| id | `IdGenerator` | UUID |
+| recording_session_id | ingestion | FK. The sample's `sensor_id` must equal the session's sensor (else `InvalidSensorSample`); the sensor is reached through the session, so it is not repeated here |
+| sequence | ingestion | integer >= 1, strictly increasing and gap-free per session in arrival order; unique with `recording_session_id` |
+| received_hr | sample `received_hr` | float, **nullable**, beats per minute exactly as received; never rounded, clipped or repaired. Stores **finite values only** (see `received_hr_nonfinite`) |
+| received_hr_nonfinite | derived from the sample value | text, nullable, one of `nan`, `+inf`, `-inf`. Set if and only if the received value is NaN, +Infinity or -Infinity; in that case `received_hr` is NULL. A check constraint enforces both directions (set implies `received_hr` NULL; a finite `received_hr` implies this column NULL) |
+| raw_payload | sample `raw_payload` | bytes, nullable; original payload where the adapter has one |
+| device_timestamp | sample `device_timestamp` | UTC, nullable; may be absent or unreliable. A timezone-aware value in any offset is normalized to UTC (instant preserved, offset not stored). A naive value is stored as NULL and flagged `invalid_timestamp`; it is preserved only if the adapter-supplied `raw_payload` carries it (ingestion never fabricates a payload), otherwise it is lost (`ARCHITECTURE.md` 5.1a; a dedicated column is OPEN for owner approval) |
+| received_at | sample `received_at` | UTC, not null; adapter-observed receive time (the Phase 1 field). Always timezone-aware by the sample-type invariant; any offset is normalized to UTC, instant preserved |
+| ingestion_timestamp | injected `Clock.now_utc()` at persistence | UTC, not null; distinct from `received_at` |
+| elapsed_seconds | injected `Clock.monotonic()` minus the session's monotonic origin | float >= 0, not null; elapsed since the *recording* session started. It is not an interval/phase clock and has no pause semantics (Phase 3 defines the training-session clock) |
+| source_kind | sample | `real | simulated | replay | manual`; equals the session's |
+| is_synthetic | sample | must be true for `simulated` and `manual`; for `replay` it is inherited from the replayed sample |
+| adapter_quality_hint | sample `quality_hint` | text, nullable; stored verbatim, **never interpreted** or mapped to a quality state in Part 2a |
+| origin_sample_id | replay only | nullable self-FK to the replayed sample |
+
+**Non-finite values (decided).** SQLite stores NaN as NULL and database float handling of NaN and infinities differs between backends, so Part 2a does not rely on the backend's float semantics. Ingestion records the *class* of a non-finite value in `received_hr_nonfinite` and leaves `received_hr` NULL. The class is recovered exactly (`nan`, `+inf`, `-inf`); a NaN's sign bit and payload bits are not preserved (they carry no meaning for heart rate and the raw payload, if the adapter had one, is retained in `raw_payload`). The in-memory sample is reconstructed from the stored class, so replay reproduces the original non-finite value. Such a sample is validated as `malformed_sample` and assessed `INVALID` like any non-numeric value. A non-finite value is never converted to a finite one, clipped or dropped.
+
+Four time notions stay distinct (`ARCHITECTURE.md` 6): device timestamp, ingestion timestamp (plus the adapter `received_at`), event timestamp (not used in Part 2a) and monotonic elapsed time.
+
+Never updated or deleted by application code: repositories expose no update or delete for this table, and a test enforces it. Database-level enforcement (triggers or permissions) remains OPEN. Additional sensor fields (for example beat-to-beat interval data) are **not assumed**; the table can be extended once an adapter's real outputs are verified (OPEN, Polar H10 unverified).
 
 Volume note: roughly one row per sensor update per session; time-series partitioning is not needed at research scale (PROPOSED: revisit if data volume demands).
 
-### 4.7 SignalAssessment and corrections
+### 4.6a Replay provenance (Part 2a, decided)
 
-`SignalAssessment(sample_id, quality_state [UNKNOWN|GOOD|ACCEPTABLE|POOR|INVALID|STALE|MISSING], reasons[], processing_run_id)`: separate from the raw row so reprocessing with a new version adds assessments rather than editing samples.
+Replay reads the stored samples of an *origin* recording session in `sequence` order and ingests them as a **new** recording session (`source_kind = replay`, `origin_recording_session_id` = origin). The origin session and its samples are never modified. Replay is an ingestion-layer service, not a `HeartRateSensor` adapter (`ARCHITECTURE.md` 7.2). Its recording session references a `sensor` row of kind `replay` (a registry entry representing the replay service, created on first use), not the origin's sensor; the origin's sensor is reachable through `origin_recording_session_id`. Each replayed sample copies `received_hr` (including `received_hr_nonfinite`), `raw_payload`, `device_timestamp`, `received_at` and `adapter_quality_hint` unchanged, gets a new `sequence`, `ingestion_timestamp` and `elapsed_seconds` from the replay session's clock, and sets `origin_sample_id`. The original `source_kind` is therefore recoverable through `origin_sample_id`. `is_synthetic` is inherited from the origin sample.
 
-`SampleCorrection(sample_id, original_value, corrected_value, method, reason, created_at, processing_version)`: exists only if corrections are permitted (OPEN, Scientific Specification Section 5; the default is flag-only).
+### 4.7 SignalAssessment (Part 2a) and corrections
 
-Gaps and stale intervals are represented as assessment records over time ranges (`MISSING`/`STALE`), not as invented samples.
+`SignalAssessment(id, recording_session_id, sample_id?, range_start_at?, range_end_at?, after_sample_id?, before_sample_id?, quality_state [UNKNOWN|GOOD|ACCEPTABLE|POOR|INVALID|STALE|MISSING], reasons (JSON list of reason codes), processing_run_id, created_at)`
+
+- Either **per-sample** (`sample_id` set, range fields null) or **range** (`sample_id` null; `range_start_at`, `range_end_at` and `after_sample_id` set; `before_sample_id` null for an open-ended range). Exactly one form per row (check constraint). A run has **at most one per-sample assessment per sample**: a unique constraint on `(processing_run_id, sample_id)`. Range rows have a NULL `sample_id`. A unique constraint treats NULLs as distinct, so **multiple range rows with a NULL `sample_id` in the same run are permitted**, and the constraint gives **no uniqueness guarantee for range rows**; it covers only per-sample rows, with no partial index. This is SQLite's documented behavior (verified on SQLite 3.50.4: duplicate non-NULL pairs are rejected, repeated `(run, NULL)` pairs are accepted) and PostgreSQL's default `NULLS DISTINCT` behavior (documented, not yet verified here); the PostgreSQL `NULLS NOT DISTINCT` option must not be used on this constraint. Range rows are not constrained by the schema in Part 2a: ingestion writes each `gap` once, when its later sample arrives, and the single `stale` range only at session close, which is write-once.
+- Reason codes: `malformed_sample`, `missing`, `impossible_hr`, `invalid_timestamp` (validation) and `duplicate_timestamp`, `out_of_order_timestamp`, `implausible_jump`, `gap`, `stale` (signal quality). State rules are in `SCIENTIFIC_SPECIFICATION.md` 5.1.
+- Separate from the raw row: reprocessing adds a new `processing_run` and new assessments; nothing is edited. Once reassessment exists (deferred; Section 2.2), the assessment to use for a sample is the one from the most recent `processing_run` for that sample; in Part 2a each session has exactly one run.
+- `processing_run.method_id` is `signal_assessment` (validation then signal quality, as one versioned method); `method_version` is a string bumped on any rule change. `parameters` holds the configuration snapshot.
+
+`SampleCorrection` is **not created in Part 2a**: no correction or interpolation is permitted; the policy is flag, do not repair (OPEN to revisit later, Scientific Specification Section 5).
+
+Gaps and stale intervals are range assessments, not invented samples.
 
 ### 4.8 TrainingEvent (append-only)
 
@@ -233,7 +279,9 @@ erDiagram
     TRAINING_PROTOCOL ||--o{ TRAINING_SESSION : "used by"
     SENSOR ||--o{ TRAINING_SESSION : "provides data to"
     TRAINING_SESSION ||--o{ SESSION_PHASE : contains
-    TRAINING_SESSION ||--o{ SENSOR_SAMPLE : records
+    RECORDING_SESSION ||--o{ SENSOR_SAMPLE : records
+    SENSOR ||--o{ RECORDING_SESSION : "provides data to (Part 2a)"
+    TRAINING_SESSION }o--o| RECORDING_SESSION : "references (Phase 3)"
     SENSOR_SAMPLE ||--o{ SIGNAL_ASSESSMENT : "assessed by"
     TRAINING_SESSION ||--o{ TRAINING_EVENT : emits
     SESSION_PHASE }o--|| ZONE_DEFINITION : "uses"
@@ -259,6 +307,7 @@ erDiagram
 |---|---|
 | SensorSample, SourceFile, LaboratorySample, FieldTestInput, TrainingEvent | append-only, never edited |
 | SignalAssessment, ProcessingRun, SessionMetricSet | append-only; reprocessing adds new rows |
+| RecordingSession | immutable except `ended_at` and `end_reason`, set exactly once when the session is closed |
 | PhysiologicalMeasurement | not edited; superseded via `superseded_by` / validity window |
 | Calibration | state changes only through logged transitions; parameters immutable once created |
 | TrainingProtocol, FieldTestProtocol, ImportMapping | immutable per version |
@@ -272,9 +321,11 @@ Retention and deletion: athlete data-deletion and export obligations depend on j
 
 1. Attributes collected for athletes (body mass, age, sex, training status) and where each is needed.
 2. Calibration scope and unit of observation (Scientific Specification 11.3).
-3. Whether corrections to samples are permitted at all (`SampleCorrection` exists only if so).
+3. Whether corrections to samples are permitted at all (`SampleCorrection` exists only if so). Part 2a decision: not created; flag, do not repair.
 4. Primary key strategy: **UUID approved**. Remaining OPEN: UUID version, and that pseudonymous athlete ids must not be derived from identity.
-5. SQLite development parity with PostgreSQL features used (partial unique indexes, JSON types).
+5. SQLite development parity with PostgreSQL features used (partial unique indexes, JSON types). Part 2a uses a generic JSON column for `reasons` and `parameters`; PostgreSQL behavior is unverified until a driver and CI service are chosen.
 6. Authentication/authorization model and the coach–athlete relationship (one coach per athlete vs many).
 7. Data retention, deletion and export policy under the applicable jurisdiction.
 8. Which beat-level data (if any) the verified sensor interface provides.
+9. Database-level append-only enforcement for `sensor_sample` (triggers or permissions) versus repository-level only.
+10. Association of a recording session with an athlete (deferred; none in Part 2a, privacy-minimal).

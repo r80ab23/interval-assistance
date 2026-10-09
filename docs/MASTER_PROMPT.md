@@ -1829,15 +1829,20 @@ Phase 1 does NOT include any database table for heart-rate samples, ingestion, v
 
 ## Phase 2
 
-Sensor data pipeline:
+Sensor data pipeline, delivered in two gated parts (see `SPECIFICATION_REVIEW.md` Section 12):
 
-* raw HR sample persistence (`SensorSample` table)
+**Part 2a** (implementation-ready once Section 12 is accepted):
+
+* raw HR sample persistence (`SensorSample` table) and its recording-session container
 * ingestion
 * validation
 * signal quality
-* replay
+* replay (an ingestion/replay service that re-ingests a stored recording session; it is not a `HeartRateSensor` adapter)
 * related persistence infrastructure
-* real sensor transport / BLE (only after the Polar H10 and transport items in `ARCHITECTURE.md` are verified)
+
+**Part 2b** (separately gated; not part of Part 2a):
+
+* real sensor transport / BLE, only after the Polar H10 interface and the transport path in `ARCHITECTURE.md` Section 7.3 are verified against official documentation and explicitly approved
 
 ## Phase 3
 
