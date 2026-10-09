@@ -189,7 +189,7 @@ Pre-implementation clarification:
 
 | # | Topic | Decision | Where |
 |---|---|---|---|
-| 14 | Configuration identity | Canonical serialization fixed: hashed JSON document with a `format` tag, sorted keys, UTF-8, no whitespace, finite numbers only, plain-positional shortest round-trip numbers, SHA-256 as 64 lowercase hex; unknown keys rejected; `(id, version)` immutable. Test vectors included. No threshold or policy chosen. Source-file format and settings key stay an implementation choice. | SCIENTIFIC 5.1.1; DATA_MODEL 4.4a; TESTING 10 |
+| 14 | Configuration identity | Canonical serialization fixed: hashed JSON document with a `format` tag, sorted keys, UTF-8, no whitespace, finite numbers only, numbers via the ECMA-262 `Number::toString` digit selection (n, k, s) rendered in plain positional notation, SHA-256 as 64 lowercase hex; unknown keys rejected; `(id, version)` immutable. Test vectors included. No threshold or policy chosen. Source-file format and settings key stay an implementation choice. | SCIENTIFIC 5.1.1; DATA_MODEL 4.4a; TESTING 10 |
 
 ### 12.2 Remaining OPEN items
 
