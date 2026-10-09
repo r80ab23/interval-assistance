@@ -49,6 +49,14 @@ One row per execution of a method that produces derived values.
 
 Input linkage: `ProcessingInput(processing_run_id, input_table, input_id, role)` records which rows were consumed. This answers "where did this value come from?" (MANDATED, Section 23).
 
+**Part 2a lifecycle and ownership (decided).**
+
+- **Creation.** Opening a recording session creates its one `ProcessingRun` in the same transaction as the `recording_session` row (method `signal_assessment`, the method version, and the signal-quality configuration snapshot as `parameters`). A session therefore never exists without its run.
+- **Ownership.** Every `SignalAssessment` produced for that session belongs to this run: per-sample assessments, `gap` ranges written when the later sample arrives, and the close-time `stale` range. Each assessment's `recording_session_id` equals its run's.
+- **Replay sessions** have their own run created when the replay session is opened; replay never copies or reuses the origin session's assessments.
+- **Reassessment is deferred.** Part 2a provides no reassessment operation, so each recording session has exactly one run and "the run to use" is unambiguous. When reassessment is introduced it must create a *new* run with new assessments and never overwrite or delete historical ones; the selection rule in Section 4.7 then applies.
+- **Unassessed samples.** A sample whose assessment was not committed (for example a failure between the raw commit and the assessment commit) has no assessment in the run. Consumers must treat "no assessment" as unassessed, never as `GOOD`. Part 2a does not repair this.
+
 ### 2.3 `PhysiologicalMeasurement` (PROPOSED, core)
 
 The common typed container for scalar physiological values that are not high-volume streams (streams use `SensorSample` and the laboratory sample tables).
@@ -161,8 +169,8 @@ Not implemented in Phase 1. The table is the persisted form of the in-memory sam
 | received_hr | sample `received_hr` | float, **nullable**, beats per minute exactly as received; never rounded, clipped or repaired. Stores **finite values only** (see `received_hr_nonfinite`) |
 | received_hr_nonfinite | derived from the sample value | text, nullable, one of `nan`, `+inf`, `-inf`. Set if and only if the received value is NaN, +Infinity or -Infinity; in that case `received_hr` is NULL. A check constraint enforces both directions (set implies `received_hr` NULL; a finite `received_hr` implies this column NULL) |
 | raw_payload | sample `raw_payload` | bytes, nullable; original payload where the adapter has one |
-| device_timestamp | sample `device_timestamp` | UTC, nullable; may be absent or unreliable |
-| received_at | sample `received_at` | UTC, not null; adapter-observed receive time (the Phase 1 field) |
+| device_timestamp | sample `device_timestamp` | UTC, nullable; may be absent or unreliable. A timezone-aware value in any offset is normalized to UTC (instant preserved, offset not stored). A naive value is stored as NULL and flagged `invalid_timestamp` (`ARCHITECTURE.md` 5.1a; preserving the naive value is OPEN) |
+| received_at | sample `received_at` | UTC, not null; adapter-observed receive time (the Phase 1 field). Always timezone-aware by the sample-type invariant; any offset is normalized to UTC, instant preserved |
 | ingestion_timestamp | injected `Clock.now_utc()` at persistence | UTC, not null; distinct from `received_at` |
 | elapsed_seconds | injected `Clock.monotonic()` minus the session's monotonic origin | float >= 0, not null; elapsed since the *recording* session started. It is not an interval/phase clock and has no pause semantics (Phase 3 defines the training-session clock) |
 | source_kind | sample | `real | simulated | replay | manual`; equals the session's |
@@ -186,9 +194,9 @@ Replay reads the stored samples of an *origin* recording session in `sequence` o
 
 `SignalAssessment(id, recording_session_id, sample_id?, range_start_at?, range_end_at?, after_sample_id?, before_sample_id?, quality_state [UNKNOWN|GOOD|ACCEPTABLE|POOR|INVALID|STALE|MISSING], reasons (JSON list of reason codes), processing_run_id, created_at)`
 
-- Either **per-sample** (`sample_id` set, range fields null) or **range** (`sample_id` null; `range_start_at`, `range_end_at` and `after_sample_id` set; `before_sample_id` null for an open-ended range). Exactly one form per row (check constraint).
+- Either **per-sample** (`sample_id` set, range fields null) or **range** (`sample_id` null; `range_start_at`, `range_end_at` and `after_sample_id` set; `before_sample_id` null for an open-ended range). Exactly one form per row (check constraint). A run has **at most one per-sample assessment per sample**: a unique constraint on `(processing_run_id, sample_id)`. Range rows have a NULL `sample_id`, and NULLs are distinct in both SQLite and PostgreSQL, so a plain unique constraint covers only per-sample rows with no partial index (avoiding a SQLite/PostgreSQL parity question). Range rows are not constrained by the schema in Part 2a: ingestion writes each `gap` once, when its later sample arrives, and the single `stale` range only at session close, which is write-once.
 - Reason codes: `malformed_sample`, `missing`, `impossible_hr`, `invalid_timestamp` (validation) and `duplicate_timestamp`, `out_of_order_timestamp`, `implausible_jump`, `gap`, `stale` (signal quality). State rules are in `SCIENTIFIC_SPECIFICATION.md` 5.1.
-- Separate from the raw row: reprocessing adds a new `processing_run` and new assessments; nothing is edited. The assessment to use for a sample is the one from the most recent `processing_run` for that sample.
+- Separate from the raw row: reprocessing adds a new `processing_run` and new assessments; nothing is edited. Once reassessment exists (deferred; Section 2.2), the assessment to use for a sample is the one from the most recent `processing_run` for that sample; in Part 2a each session has exactly one run.
 - `processing_run.method_id` is `signal_assessment` (validation then signal quality, as one versioned method); `method_version` is a string bumped on any rule change. `parameters` holds the configuration snapshot.
 
 `SampleCorrection` is **not created in Part 2a**: no correction or interpolation is permitted; the policy is flag, do not repair (OPEN to revisit later, Scientific Specification Section 5).

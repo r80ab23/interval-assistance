@@ -126,18 +126,18 @@ This subsection defines *structure*. It selects **no numeric value** and makes *
 | Validation (per sample) | `malformed_sample` | a value or payload was delivered but the value is null or not a finite number (NaN, +Infinity and -Infinity are preserved by class as stored and are always `malformed_sample`; they are never treated as a number out of range) |
 | Validation | `missing` | a delivery carried neither a value nor a payload |
 | Validation | `impossible_hr` | value finite but outside the configured `[hr_min_bpm, hr_max_bpm]` |
-| Validation | `invalid_timestamp` | `device_timestamp` present but not timezone-aware |
+| Validation | `invalid_timestamp` | `device_timestamp` present but naive (not timezone-aware). A timezone-aware value in any offset is valid: it is normalized to UTC with its instant preserved. No other timestamp validity rule is defined |
 | Signal quality (stateful) | `duplicate_timestamp` | timestamp equal to the previous sample's |
 | Signal quality | `out_of_order_timestamp` | timestamp earlier than the previous sample's |
 | Signal quality | `implausible_jump` | absolute change from the previous *validation-passing* sample's value exceeds `max_jump_bpm` |
 | Signal quality | `gap` | closed range: time between consecutive samples' `received_at` exceeds `gap_after_seconds` |
 | Signal quality | `stale` | open range: at an explicitly supplied evaluation time, age of the latest `received_at` exceeds `stale_after_seconds` |
 
-Timestamp checks use `device_timestamp` when present, otherwise `received_at`. A sample with no previous sample has no stateful findings.
+Timestamp checks use `device_timestamp` when present and valid, otherwise `received_at`; comparisons use the normalized UTC instants. A sample with no previous sample has no stateful findings.
 
 **State assignment.** Any validation finding gives `INVALID` (fixed, not configurable). Signal-quality codes map to states through the configuration's `state_by_reason`. A sample or range with several findings takes the highest-precedence state in the fixed order `INVALID > MISSING > STALE > POOR > ACCEPTABLE > GOOD > UNKNOWN` (a project convention for aggregation, not a physiological ordering). With no findings the state is the configuration's `no_findings_state`. The criteria that would separate `GOOD`, `ACCEPTABLE` and `POOR` beyond this reason-code mapping remain UNSPECIFIED.
 
-**`stale` persistence.** Evaluation is a pure function of an explicit `now`. A `stale` range is persisted only when a recording session is closed and its last sample is older than `stale_after_seconds` at the closing time (open range ending at that time). If samples resume, the interval is recorded as a closed `gap` instead.
+**`stale` persistence.** Evaluation is a pure function of an explicit `now`. The close-time `stale` range is owned by the recording session's processing run (`DATA_MODEL.md` 2.2). A `stale` range is persisted only when a recording session is closed and its last sample is older than `stale_after_seconds` at the closing time (open range ending at that time). If samples resume, the interval is recorded as a closed `gap` instead.
 
 **Versioned configuration.** A `SignalQualityConfig` has: `config_id`, `config_version`, `hr_min_bpm`, `hr_max_bpm`, `max_jump_bpm`, `stale_after_seconds`, `gap_after_seconds`, `state_by_reason` (for the five signal-quality codes) and `no_findings_state`. **Every field is required and has no default in code**; `hr_min_bpm` must be below `hr_max_bpm`. The configuration is loaded from a file referenced by settings. Its SHA-256 over a canonical serialization is its identity: a `(config_id, config_version)` pair is immutable, and presenting different content under an existing pair is an error. Each recording session records the id, version and hash in force, and each `processing_run.parameters` holds the full snapshot. Any change to a value requires a new `config_version`; any change to a rule requires a new `method_version`.
 

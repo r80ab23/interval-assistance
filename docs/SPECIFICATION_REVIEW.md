@@ -178,8 +178,17 @@ Two further points were resolved before commit:
 | 10 | Non-finite HR | NaN, +Infinity and -Infinity are stored as a class marker (`received_hr_nonfinite`: `nan`, `+inf`, `-inf`) with `received_hr` NULL, because SQLite stores NaN as NULL and backends differ. The class is preserved exactly; NaN sign/payload bits are not (any raw payload is retained). Always `malformed_sample`/`INVALID`; reproduced by replay; never converted, clipped or dropped. | DATA_MODEL 4.6, SCIENTIFIC 5.1, ARCHITECTURE 5.1a |
 | 11 | Replay shape | Replay is an **ingestion/replay service** (`ingestion/replay.py`), not a `HeartRateSensor` adapter: it reads storage and must attach `origin_sample_id`, and `sensors/` may not import storage. Replay sessions reference a `sensor` row of kind `replay`. | ARCHITECTURE 4, 7.2; MASTER_PROMPT 57; DATA_MODEL 4.6a; TESTING 5, 6 |
 
+Follow-up to the PR #2 review (two MAJOR findings):
+
+| # | Topic | Decision | Where |
+|---|---|---|---|
+| 12 | Timestamp delivery contract | Timezone-aware `received_at` and `device_timestamp` in any offset are normalized to UTC (instant preserved, offset not stored); never rejected for their offset. `received_at` is aware by the existing Phase 1 type invariant, so a naive one fails at sample construction and never reaches ingestion. A naive `device_timestamp` is stored NULL with the sample persisted and `invalid_timestamp`/`INVALID` recorded. `InvalidSensorSample` stays limited to unknown/closed/inactive session, sensor mismatch and source-kind mismatch. | ARCHITECTURE 5.1a; DATA_MODEL 4.6; SCIENTIFIC 5.1 |
+| 13 | ProcessingRun lifecycle | One run per recording session, created with the session in the same transaction; it owns all that session's assessments including `gap` ranges and the close-time `stale` range. Reassessment is **deferred** (it must later create a new run and never overwrite history). Unique `(processing_run_id, sample_id)` for per-sample rows; samples without an assessment are "unassessed", not `GOOD`. Replay sessions get their own run. | DATA_MODEL 2.2, 4.7; SCIENTIFIC 5.1 |
+
 ### 12.2 Remaining OPEN items
 
+- **Naive `device_timestamp` preservation (unreconciled conflict, owner decision).** The table has only a UTC `device_timestamp` column, so a naive wall-clock value has nowhere to be stored without inventing a time zone or adding a column. Part 2a stores NULL and flags it, losing the original naive value unless it is inside `raw_payload`. Options: accept this, or add a nullable text column for the unparsed value. Either choice can be made before the ingestion step; the current text is the safe default.
+- Reassessment operation (deferred; no Part 2a code).
 - Numeric values of the signal-quality configuration and the owner's approval of a configuration for real use (blocks real-data use, not implementation).
 - Criteria separating `GOOD`, `ACCEPTABLE` and `POOR` beyond the reason-code mapping.
 - Database-level append-only enforcement for `sensor_sample` (repository-level in Part 2a).
