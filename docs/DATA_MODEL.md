@@ -151,7 +151,7 @@ A `RecordingSession` is the minimal container for samples collected from one sen
 
 - `source_kind` and `is_synthetic` equal those of every sample in the session (enforced at ingestion); a session has exactly one source kind.
 - `started_at` is the injected `Clock` UTC time at creation. The monotonic origin used for `elapsed_seconds` exists only in the process that created the session, so **a recording session cannot be resumed after a process restart**. A session whose process is gone can only be closed (`end_reason = interrupted`); further data requires a new session.
-- `signal_quality_config_*` record the exact configuration in force (Scientific Specification 5.1), so the session remains interpretable if configuration changes later.
+- `signal_quality_config_*` record the exact configuration in force (Scientific Specification 5.1), so the session remains interpretable if configuration changes later. `signal_quality_config_id` and `signal_quality_config_version` are strings matching `^[A-Za-z0-9._-]{1,64}$`; `signal_quality_config_hash` is 64 lowercase hexadecimal characters, the SHA-256 defined in Scientific Specification 5.1.1.
 - `origin_recording_session_id` is set only for replay sessions (Section 4.6a).
 - Closed sessions accept no further samples.
 
