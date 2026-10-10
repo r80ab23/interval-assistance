@@ -174,6 +174,24 @@ def test_state_by_reason_needs_exactly_the_five_codes() -> None:
             make_config(state_by_reason=bad)
 
 
+def test_direct_construction_rejects_plain_string_state_keys() -> None:
+    """ReasonCode is a str enum, so "gap" == ReasonCode.GAP; plain keys must not get through
+    and then fail later inside config_hash()."""
+    plain = {code.value: state for code, state in make_state_map().items()}
+    with pytest.raises(ConfigurationError):
+        SignalQualityConfig(
+            config_id="c",
+            config_version="1",
+            hr_min_bpm=1,
+            hr_max_bpm=2,
+            max_jump_bpm=1,
+            stale_after_seconds=1,
+            gap_after_seconds=1,
+            state_by_reason=plain,  # type: ignore[arg-type]
+            no_findings_state=QualityState.GOOD,
+        )
+
+
 def test_no_findings_state_must_be_a_state_name() -> None:
     for bad in ("good", "FINE", 1, None):
         with pytest.raises(ConfigurationError):

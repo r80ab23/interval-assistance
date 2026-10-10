@@ -199,3 +199,23 @@ def test_worst_state_is_order_independent_and_a_member_of_the_input(
     assert result in states
     assert worst_state(reversed(states)) is result
     assert all(STATE_PRECEDENCE.index(result) <= STATE_PRECEDENCE.index(s) for s in states)
+
+
+@given(st.lists(st.tuples(heart_rate, payload, offsets), min_size=1, max_size=12))
+def test_stale_reference_is_the_monotonic_maximum_of_receive_times(
+    items: list[tuple[float | None, bytes | None, float]],
+) -> None:
+    config = make_config()
+    state = StreamState()
+    seen: list[Any] = []
+    previous = None
+    for hr, raw, seconds in items:
+        arrived = T0 + timedelta(seconds=seconds)
+        step = assess_sample(sample(hr, at=arrived, raw_payload=raw), state, config)
+        state = step.next_state
+        seen.append(arrived)
+        assert state.max_received_at == max(seen)  # valid or invalid, every arrival counts
+        assert state.last_received_at == arrived  # the gap reference stays last-arrived
+        if previous is not None:
+            assert state.max_received_at >= previous
+        previous = state.max_received_at

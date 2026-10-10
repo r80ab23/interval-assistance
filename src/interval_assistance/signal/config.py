@@ -73,7 +73,11 @@ class SignalQualityConfig:
         if not problems and not numbers["hr_min_bpm"] < numbers["hr_max_bpm"]:
             problems.append("hr_min_bpm must be below hr_max_bpm")
         mapping = self.state_by_reason
-        if not isinstance(mapping, Mapping) or set(mapping) != set(SIGNAL_QUALITY_REASONS):
+        if (
+            not isinstance(mapping, Mapping)
+            or not all(isinstance(key, ReasonCode) for key in mapping)
+            or set(mapping) != set(SIGNAL_QUALITY_REASONS)
+        ):
             problems.append("state_by_reason must have exactly the five signal-quality codes")
         elif not all(isinstance(state, QualityState) for state in mapping.values()):
             problems.append("state_by_reason values must be quality states")

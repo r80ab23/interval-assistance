@@ -5,9 +5,11 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 
 from interval_assistance.signal import (
+    AssessmentStep,
     QualityState,
     ReasonCode,
     StreamState,
+    TimestampAxis,
     assess_sample,
     effective_timestamp,
     evaluate_stale,
@@ -17,6 +19,22 @@ from .helpers import DOC_CONFIG_SOURCE, T0, make_config, sample
 
 CONFIG = make_config()  # jump 5, gap 7 s, stale 3.5 s, no_findings GOOD (test conventions)
 EMPTY = StreamState()
+
+
+def full_state() -> StreamState:
+    return StreamState(
+        last_timestamp=T0,
+        last_timestamp_axis=TimestampAxis.RECEIVE,
+        last_received_at=T0,
+        max_received_at=T0,
+        last_valid_hr=12.0,
+    )
+
+
+def stale_reference(step: AssessmentStep) -> datetime:
+    reference = step.next_state.max_received_at
+    assert reference is not None
+    return reference
 
 
 def state_map(**mapping: str) -> dict[str, str]:
@@ -99,15 +117,91 @@ def test_non_utc_offsets_are_compared_as_instants() -> None:
     assert effective_timestamp(first).utcoffset() == timedelta(0)
 
 
-def test_mixed_axes_are_compared_literally() -> None:
-    # Documented literal reading: effective timestamps are compared whichever axis each used.
-    steps = run(
+def test_mixed_axes_produce_neither_timestamp_finding() -> None:
+    receive_then_device = run(
         [
             sample(15.0, seconds=10),
-            sample(15.0, seconds=11, device_timestamp=T0),  # device time earlier than 10 s
+            sample(15.0, seconds=11, device_timestamp=T0),  # device time "earlier" than 10 s
         ]
     )
-    assert steps[1].assessment.reasons == (ReasonCode.OUT_OF_ORDER_TIMESTAMP,)
+    assert receive_then_device[1].assessment.reasons == ()
+    device_then_receive = run(
+        [
+            sample(15.0, seconds=0, device_timestamp=T0 + timedelta(seconds=30)),
+            sample(15.0, seconds=10),  # receive time "earlier" than the device time
+        ]
+    )
+    assert device_then_receive[1].assessment.reasons == ()
+    equal_instants = run([sample(15.0, seconds=0, device_timestamp=T0), sample(15.0, seconds=0)])
+    assert equal_instants[1].assessment.reasons == ()  # equal instants, different axes
+
+
+def test_reference_axis_follows_the_previous_sample() -> None:
+    device = T0 + timedelta(seconds=50)
+    steps = run(
+        [
+            sample(15.0, seconds=0),
+            sample(15.0, seconds=1, device_timestamp=device),  # mixed: no finding
+            sample(15.0, seconds=2, device_timestamp=device),  # same axis as previous: duplicate
+            sample(15.0, seconds=3),  # mixed again: no finding
+            sample(15.0, seconds=2),  # receive axis, earlier than the previous (3 s)
+        ]
+    )
+    assert [s.assessment.reasons for s in steps] == [
+        (),
+        (),
+        (ReasonCode.DUPLICATE_TIMESTAMP,),
+        (),
+        (ReasonCode.OUT_OF_ORDER_TIMESTAMP,),
+    ]
+    assert [s.next_state.last_timestamp_axis for s in steps] == [
+        TimestampAxis.RECEIVE,
+        TimestampAxis.DEVICE,
+        TimestampAxis.DEVICE,
+        TimestampAxis.RECEIVE,
+        TimestampAxis.RECEIVE,
+    ]
+
+
+def test_naive_device_timestamp_uses_the_receive_axis() -> None:
+    naive = datetime(1999, 1, 1)
+    after_receive = run([sample(15.0, seconds=5), sample(15.0, seconds=2, device_timestamp=naive)])
+    assert after_receive[1].assessment.reasons == (
+        ReasonCode.INVALID_TIMESTAMP,
+        ReasonCode.OUT_OF_ORDER_TIMESTAMP,
+    )
+    assert after_receive[1].next_state.last_timestamp_axis is TimestampAxis.RECEIVE
+    device = T0 + timedelta(seconds=50)
+    after_device = run(
+        [
+            sample(15.0, seconds=0, device_timestamp=device),
+            sample(15.0, seconds=1, device_timestamp=naive),
+        ]
+    )
+    assert after_device[1].assessment.reasons == (ReasonCode.INVALID_TIMESTAMP,)  # mixed axes
+
+
+def test_unknown_axis_state_cannot_be_constructed_or_compared() -> None:
+    with pytest.raises(ValueError):
+        StreamState(last_timestamp=T0)
+    with pytest.raises(ValueError):
+        StreamState(last_timestamp_axis=TimestampAxis.RECEIVE)
+    with pytest.raises(ValueError):
+        StreamState(last_timestamp=T0, last_timestamp_axis="receive")  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        StreamState(last_timestamp=datetime(2026, 1, 1), last_timestamp_axis=TimestampAxis.DEVICE)
+
+
+def test_stream_state_is_keyword_only_and_internally_consistent() -> None:
+    with pytest.raises(TypeError):
+        StreamState(T0, TimestampAxis.RECEIVE)  # type: ignore[call-arg]
+    with pytest.raises(ValueError):
+        StreamState(last_received_at=T0)  # max_received_at missing
+    with pytest.raises(ValueError):
+        StreamState(max_received_at=T0)  # last_received_at missing
+    with pytest.raises(ValueError):
+        StreamState(last_received_at=T0 + timedelta(seconds=1), max_received_at=T0)
+    StreamState(last_received_at=T0, max_received_at=T0 + timedelta(seconds=1))
 
 
 def test_implausible_jump_boundary_is_strictly_greater() -> None:
@@ -221,17 +315,18 @@ def test_stream_state_tracks_the_previous_sample() -> None:
     steps = run([sample(12.0, seconds=0), sample(None, seconds=1), sample(14.0, seconds=2)])
     first, second, third = (s.next_state for s in steps)
     assert (first.last_timestamp, first.last_received_at, first.last_valid_hr) == (T0, T0, 12.0)
+    assert first.max_received_at == T0 and first.last_timestamp_axis is TimestampAxis.RECEIVE
     assert second.last_valid_hr == 12.0 and second.last_received_at == T0 + timedelta(seconds=1)
     assert third.last_valid_hr == 14.0
 
 
 def test_assessment_is_deterministic_and_does_not_mutate_state() -> None:
-    state = StreamState(last_timestamp=T0, last_received_at=T0, last_valid_hr=12.0)
+    state = full_state()
     item = sample(19.0, seconds=0)
     first = assess_sample(item, state, CONFIG)
     second = assess_sample(item, state, CONFIG)
     assert first == second
-    assert state == StreamState(last_timestamp=T0, last_received_at=T0, last_valid_hr=12.0)
+    assert state == full_state()
 
 
 def test_stale_boundary_is_strictly_greater_and_pure() -> None:
@@ -259,3 +354,46 @@ def test_stale_normalizes_offsets_and_requires_aware_times() -> None:
         evaluate_stale(datetime(2026, 1, 1), T0, CONFIG)
     with pytest.raises(ValueError):
         evaluate_stale(T0, datetime(2026, 1, 1), CONFIG)
+
+
+def test_invalid_arrivals_update_gap_and_stale_references() -> None:
+    steps = run([sample(15.0, seconds=0), sample(None, seconds=6), sample(15.0, seconds=12)])
+    invalid = steps[1]
+    assert invalid.assessment.state is QualityState.INVALID
+    assert invalid.next_state.last_received_at == T0 + timedelta(seconds=6)
+    assert stale_reference(invalid) == T0 + timedelta(seconds=6)
+    assert invalid.next_state.last_valid_hr == 15.0  # validity and arrival are separate
+    # Stale is measured from the invalid arrival (6 s), not from the last valid sample (0 s).
+    assert evaluate_stale(stale_reference(invalid), T0 + timedelta(seconds=9.5), CONFIG) is None
+    assert evaluate_stale(stale_reference(invalid), T0 + timedelta(seconds=9.6), CONFIG)
+    assert steps[2].gap is None  # 6 s then 6 s
+
+
+def test_max_received_at_never_moves_backwards() -> None:
+    steps = run([sample(15.0, seconds=0), sample(15.0, seconds=10), sample(15.0, seconds=5)])
+    assert [stale_reference(s) for s in steps] == [
+        T0,
+        T0 + timedelta(seconds=10),
+        T0 + timedelta(seconds=10),
+    ]
+    assert steps[2].next_state.last_received_at == T0 + timedelta(seconds=5)  # last-arrived
+
+
+def test_stale_uses_the_maximum_receive_time_after_an_older_arrival() -> None:
+    steps = run([sample(15.0, seconds=0), sample(15.0, seconds=10), sample(15.0, seconds=5)])
+    reference = stale_reference(steps[2])
+    assert reference == T0 + timedelta(seconds=10)
+    assert evaluate_stale(reference, T0 + timedelta(seconds=13.5), CONFIG) is None
+    finding = evaluate_stale(reference, T0 + timedelta(seconds=13.6), CONFIG)
+    assert finding is not None and finding.start == T0 + timedelta(seconds=10)
+
+
+def test_gap_still_uses_the_last_arrived_receive_time() -> None:
+    # Arrivals at 0, 10 (gap), 5 (earlier: no gap), then 12 (exactly 7 s after 5: no gap).
+    steps = run([sample(15.0, seconds=s) for s in (0, 10, 5, 12)])
+    assert steps[1].gap is not None
+    assert steps[2].gap is None
+    assert steps[3].gap is None
+    later = run([sample(15.0, seconds=s) for s in (0, 10, 5, 12.5)])
+    gap = later[3].gap
+    assert gap is not None and gap.start == T0 + timedelta(seconds=5)
