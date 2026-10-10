@@ -31,6 +31,15 @@ class PermissionDenied(IntervalAssistanceError):
     http_status = 403
 
 
+class InvalidSensorSample(IntervalAssistanceError):
+    """The delivery contract was broken so that no raw record can be made (unknown or closed
+    session, sensor or source mismatch). Never raised because a value is implausible or
+    malformed: those are assessed, not rejected (ARCHITECTURE.md 5.1a)."""
+
+    code = "invalid_sensor_sample"
+    http_status = 422
+
+
 class SensorConnectionError(IntervalAssistanceError):
     """Sensor connection/lifecycle failure. HTTP mapping is OPEN (API_SPECIFICATION.md 6)."""
 

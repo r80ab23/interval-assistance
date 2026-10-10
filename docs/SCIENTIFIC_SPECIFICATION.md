@@ -127,13 +127,15 @@ This subsection defines *structure*. It selects **no numeric value** and makes *
 | Validation | `missing` | a delivery carried neither a value nor a payload |
 | Validation | `impossible_hr` | value finite but outside the configured `[hr_min_bpm, hr_max_bpm]` |
 | Validation | `invalid_timestamp` | `device_timestamp` present but naive (not timezone-aware). A timezone-aware value in any offset is valid: it is normalized to UTC with its instant preserved. No other timestamp validity rule is defined |
-| Signal quality (stateful) | `duplicate_timestamp` | timestamp equal to the previous sample's |
-| Signal quality | `out_of_order_timestamp` | timestamp earlier than the previous sample's |
+| Signal quality (stateful) | `duplicate_timestamp` | timestamp equal to the previous sample's, both read from the same timestamp axis |
+| Signal quality | `out_of_order_timestamp` | timestamp earlier than the previous sample's, both read from the same timestamp axis |
 | Signal quality | `implausible_jump` | absolute change from the previous *validation-passing* sample's value exceeds `max_jump_bpm` |
-| Signal quality | `gap` | closed range: time between consecutive samples' `received_at` exceeds `gap_after_seconds` |
-| Signal quality | `stale` | open range: at an explicitly supplied evaluation time, age of the latest `received_at` exceeds `stale_after_seconds` |
+| Signal quality | `gap` | closed range: time between consecutive samples' `received_at`, in arrival order (the previous *arrived* sample, whatever its validity), exceeds `gap_after_seconds`; a later arrival with an earlier `received_at` yields no gap |
+| Signal quality | `stale` | open range: at an explicitly supplied evaluation time, age of the latest `received_at` (the maximum observed so far, which an older, later-arriving sample never lowers) exceeds `stale_after_seconds` |
 
-Timestamp checks use `device_timestamp` when present and valid, otherwise `received_at`; comparisons use the normalized UTC instants. A sample with no previous sample has no stateful findings.
+Timestamp checks use `device_timestamp` when present and valid, otherwise `received_at` (a naive `device_timestamp` therefore falls back to the receive axis); comparisons use the normalized UTC instants. Each effective timestamp belongs to one **axis**, `device` or `receive`. `duplicate_timestamp` and `out_of_order_timestamp` compare a sample only with the previous sample *on the same axis*; a device timestamp is never compared with a receive timestamp, so a mixed-axis pair produces neither finding, and the current sample becomes the reference for the next comparison. `implausible_jump` is value-based and unaffected by axes. A sample with no previous sample has no stateful findings.
+
+**Arrivals.** Every delivered sample is a receive event for `gap` and `stale`, whether or not it passed validation; sample validity and arrival are independent. `gap` is measured from the last-arrived sample's `received_at`; `stale` is measured from the maximum `received_at` observed.
 
 **State assignment.** Any validation finding gives `INVALID` (fixed, not configurable). Signal-quality codes map to states through the configuration's `state_by_reason`. A sample or range with several findings takes the highest-precedence state in the fixed order `INVALID > MISSING > STALE > POOR > ACCEPTABLE > GOOD > UNKNOWN` (a project convention for aggregation, not a physiological ordering). With no findings the state is the configuration's `no_findings_state`. The criteria that would separate `GOOD`, `ACCEPTABLE` and `POOR` beyond this reason-code mapping remain UNSPECIFIED.
 

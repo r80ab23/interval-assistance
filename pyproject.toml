@@ -68,13 +68,14 @@ root_package = "interval_assistance"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "core does not depend on api, storage, sensors or schemas"
+name = "core does not depend on api, storage, sensors, signal or schemas"
 type = "forbidden"
 source_modules = ["interval_assistance.core"]
 forbidden_modules = [
     "interval_assistance.api",
     "interval_assistance.storage",
     "interval_assistance.sensors",
+    "interval_assistance.signal",
     "interval_assistance.schemas",
 ]
 
@@ -85,13 +86,31 @@ source_modules = ["interval_assistance.sensors"]
 forbidden_modules = [
     "interval_assistance.api",
     "interval_assistance.storage",
+    "interval_assistance.signal",
     "fastapi",
     "sqlalchemy",
     "bleak",
 ]
 
 [[tool.importlinter.contracts]]
-name = "storage does not depend on api or sensors"
+name = "storage does not depend on api, sensors or signal"
 type = "forbidden"
 source_modules = ["interval_assistance.storage"]
-forbidden_modules = ["interval_assistance.api", "interval_assistance.sensors"]
+forbidden_modules = [
+    "interval_assistance.api",
+    "interval_assistance.sensors",
+    "interval_assistance.signal",
+]
+
+[[tool.importlinter.contracts]]
+name = "signal is pure domain logic (no api, storage, web or database)"
+type = "forbidden"
+source_modules = ["interval_assistance.signal"]
+forbidden_modules = [
+    "interval_assistance.api",
+    "interval_assistance.storage",
+    "fastapi",
+    "sqlalchemy",
+    "alembic",
+    "bleak",
+]

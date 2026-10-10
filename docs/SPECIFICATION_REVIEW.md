@@ -191,6 +191,14 @@ Pre-implementation clarification:
 |---|---|---|---|
 | 14 | Configuration identity | Canonical serialization fixed: hashed JSON document with a `format` tag, sorted keys, UTF-8, no whitespace, finite numbers only, numbers via the ECMA-262 `Number::toString` digit selection (n, k, s) rendered in plain positional notation, SHA-256 as 64 lowercase hex; unknown keys rejected; `(id, version)` immutable. Test vectors included. No threshold or policy chosen. Source-file format and settings key stay an implementation choice. | SCIENTIFIC 5.1.1; DATA_MODEL 4.4a; TESTING 10 |
 
+Owner decisions on the stateful signal-quality semantics (PR #5 review):
+
+| # | Topic | Decision | Where |
+|---|---|---|---|
+| 15 | Timestamp axes | `duplicate_timestamp` and `out_of_order_timestamp` compare only samples on the same axis (`device` or `receive`); a mixed-axis pair produces neither finding and the current sample becomes the reference. A naive `device_timestamp` falls back to the receive axis. `implausible_jump` stays value-based. A previous timestamp whose axis is unknown is never compared (the in-memory stream state cannot represent one). Accepted consequence: findings are not produced across an axis switch. | SCIENTIFIC 5.1 |
+| 16 | Invalid arrivals | An invalid sample is still a receive event for `gap` and `stale`; validity and arrival are kept separate. State precedence and reason-to-state mapping are unchanged. | SCIENTIFIC 5.1 |
+| 17 | Receive-time references | `gap` uses the `received_at` of the last-arrived sample in arrival order (unchanged); `stale` uses the maximum `received_at` observed, which an older later-arriving sample cannot lower. `received_at` is always present and timezone-aware (sample invariant), so no missing-receive-time handling is needed. | SCIENTIFIC 5.1 |
+
 ### 12.2 Remaining OPEN items
 
 - **Naive `device_timestamp` preservation (documented limitation; OPEN for owner approval).** The table has only a UTC `device_timestamp` column, so a naive wall-clock value has nowhere to be stored without inventing a time zone or adding a column. The existing sample contract cannot preserve it either: `raw_payload` holds only bytes the adapter actually supplied, and ingestion must not fabricate or re-serialize one. Part 2a therefore stores NULL, flags `invalid_timestamp`, and **the original value is lost unless the adapter-supplied payload carries it**. This is a bounded exception to the raw-first guarantee, not a silent one. It is latent in Part 2a (no Part 2a source supplies a `device_timestamp`). Options for the owner: (a) accept the limitation, (b) require adapters that supply device timestamps to also supply a payload carrying them, (c) add a nullable text column for the unparsed value. No column is added without approval. A decision is needed before Part 2b (the first adapter that may supply device timestamps); it does not block Part 2a.

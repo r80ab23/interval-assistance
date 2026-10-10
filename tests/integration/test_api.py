@@ -14,6 +14,7 @@ from interval_assistance.api.app import create_app
 from interval_assistance.api.security import PUBLIC, declared_policy, require_roles
 from interval_assistance.core.auth import Principal, Role
 from interval_assistance.core.clock import ManualClock
+from interval_assistance.core.errors import InvalidSensorSample
 from interval_assistance.core.ids import SequentialIdGenerator
 from tests.conftest import T0, make_settings
 
@@ -207,3 +208,25 @@ def test_documentation_routes_are_disabled_in_production(tmp_path: Path) -> None
     )
     app = create_app(settings)
     assert app.openapi_url is None and app.docs_url is None and app.redoc_url is None
+
+
+def test_invalid_sensor_sample_maps_to_422_through_the_central_handler(tmp_path: Path) -> None:
+    app = create_app(make_settings(tmp_path), id_generator=SequentialIdGenerator(7))
+    router = APIRouter()
+
+    @router.get("/reject", dependencies=[PUBLIC])
+    def reject() -> None:
+        raise InvalidSensorSample("session is closed", details={"reason": "closed"})
+
+    app.include_router(router)  # test-only route; no production endpoint is added
+    with TestClient(app) as c:
+        res = c.get("/reject")
+    assert res.status_code == 422
+    assert res.json() == {
+        "error": {
+            "code": "invalid_sensor_sample",
+            "message": "session is closed",
+            "details": {"reason": "closed"},
+            "request_id": str(uuid.UUID(int=7)),
+        }
+    }

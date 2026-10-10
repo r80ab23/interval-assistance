@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+import math
 import uuid
 from datetime import UTC, datetime
 
@@ -169,6 +171,41 @@ def test_sample_invariants() -> None:
     with pytest.raises(ValueError):
         HeartRateSample(SENSOR_ID, SourceKind.MANUAL, False, 1.0, T0)
     HeartRateSample(SENSOR_ID, SourceKind.REAL, False, 1.0, T0)
+    with pytest.raises(ValueError):
+        HeartRateSample(SENSOR_ID, SourceKind.SIMULATED, False, 1.0, T0)
+
+
+def test_replay_samples_inherit_the_synthetic_flag_either_way() -> None:
+    assert not HeartRateSample(SENSOR_ID, SourceKind.REPLAY, False, 1.0, T0).is_synthetic
+    assert HeartRateSample(SENSOR_ID, SourceKind.REPLAY, True, 1.0, T0).is_synthetic
+
+
+def test_value_may_be_absent_and_raw_payload_is_the_last_optional_field() -> None:
+    empty = HeartRateSample(SENSOR_ID, SourceKind.REAL, False, None, T0)
+    assert empty.received_hr is None and empty.raw_payload is None
+    # Positional order of the Phase 1 fields is preserved; raw_payload is appended last.
+    full = HeartRateSample(SENSOR_ID, SourceKind.REAL, False, 1.0, T0, T0, "hint", b"")
+    assert (full.device_timestamp, full.quality_hint, full.raw_payload) == (T0, "hint", b"")
+    names = [f.name for f in dataclasses.fields(HeartRateSample)]
+    assert names == [
+        "sensor_id",
+        "source_kind",
+        "is_synthetic",
+        "received_hr",
+        "received_at",
+        "device_timestamp",
+        "quality_hint",
+        "raw_payload",
+    ]
+
+
+def test_sample_carries_non_finite_values_and_naive_device_timestamps_unchanged() -> None:
+    naive = datetime(2026, 1, 1, 12, 0, 0)
+    sample = HeartRateSample(
+        SENSOR_ID, SourceKind.REAL, False, float("nan"), T0, device_timestamp=naive
+    )
+    assert math.isnan(sample.received_hr or 0.0) and sample.device_timestamp is naive
+    assert HeartRateSample(SENSOR_ID, SourceKind.REAL, False, math.inf, T0).received_hr == math.inf
 
 
 def test_provider_registry() -> None:

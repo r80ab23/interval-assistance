@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from interval_assistance.core.auth import Role
 from interval_assistance.core.clock import ManualClock, SystemClock
 from interval_assistance.core.config import Environment, Settings
+from interval_assistance.core.errors import IntervalAssistanceError, InvalidSensorSample
 from interval_assistance.core.ids import SequentialIdGenerator, UuidGenerator
 from interval_assistance.core.logging import (
     REDACTED,
@@ -89,3 +90,10 @@ def test_logging_redacts_sensitive_fields() -> None:
     assert payload["bpm"] == REDACTED
     assert payload["request_id"] == "abc"
     assert "150" not in json.dumps(payload)
+
+
+def test_invalid_sensor_sample_follows_the_error_conventions() -> None:
+    error = InvalidSensorSample("closed session", details={"session": "s"})
+    assert isinstance(error, IntervalAssistanceError)
+    assert (error.code, error.http_status) == ("invalid_sensor_sample", 422)
+    assert error.message == "closed session" and error.details == {"session": "s"}

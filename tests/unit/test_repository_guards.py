@@ -61,7 +61,9 @@ FORBIDDEN_SOURCE_PATTERNS = {
     r"polar": "Polar-specific code",
     r"\bbleak\b": "BLE transport",
     r"navigator\.bluetooth": "browser Bluetooth",
-    r"sensor_?sample": "SensorSample persistence",
+    # `InvalidSensorSample` / `invalid_sensor_sample` is the specified domain error (Phase 2a);
+    # any other SensorSample identifier would be raw-sample persistence, still out of scope.
+    r"(?<!invalid)(?<!invalid_)sensor_?sample": "SensorSample persistence",
     r"\.websocket\(": "WebSocket endpoint",
     r"new WebSocket": "WebSocket client",
     r"import .*\bWebSocket\b": "WebSocket import",
