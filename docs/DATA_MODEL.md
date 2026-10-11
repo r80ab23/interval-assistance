@@ -55,7 +55,7 @@ Input linkage: `ProcessingInput(processing_run_id, input_table, input_id, role)`
 - **Ownership.** Every `SignalAssessment` produced for that session belongs to this run: per-sample assessments, `gap` ranges written when the later sample arrives, and the close-time `stale` range. Each assessment's `recording_session_id` equals its run's.
 - **Replay sessions** have their own run created when the replay session is opened; replay never copies or reuses the origin session's assessments.
 - **Reassessment is deferred.** Part 2a provides no reassessment operation, so each recording session has exactly one run and "the run to use" is unambiguous. When reassessment is introduced it must create a *new* run with new assessments and never overwrite or delete historical ones; the selection rule in Section 4.7 then applies.
-- **Unassessed samples.** A sample whose assessment was not committed (for example a failure between the raw commit and the assessment commit) has no assessment in the run. Consumers must treat "no assessment" as unassessed, never as `GOOD`. Part 2a does not repair this.
+- **Unassessed samples.** A sample whose assessment was not committed (for example a failure between the raw commit and the assessment commit) has no assessment in the run. Consumers must treat "no assessment" as unassessed, never as `GOOD`. Part 2a does not repair this. Because the unassessed sample is missing from the stream, ingestion evaluates the next assessed sample of that session as the start of a stream (no `gap`, duplicate, out-of-order or jump finding across the missing sample), while the `stale` reference remains the latest `received_at` among all committed raw samples.
 
 ### 2.3 `PhysiologicalMeasurement` (PROPOSED, core)
 

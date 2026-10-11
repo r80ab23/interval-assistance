@@ -47,6 +47,7 @@ npm run lint && npm run typecheck && npm test && npm run build
 - `src/interval_assistance/api` - FastAPI app factory, `/api/v1` routes, authorization seam, error handlers
 - `src/interval_assistance/schemas` - response/error envelopes and health schemas
 - `src/interval_assistance/sensors` - `HeartRateSensor`, in-memory sample, simulator, manual input
-- `src/interval_assistance/storage` - SQLAlchemy base/engine, the five Phase 2a table models, and Alembic migrations (`0001` empty baseline, `0002` Phase 2a tables)
+- `src/interval_assistance/storage` - SQLAlchemy base/engine, the five Phase 2a table models, and the append-only `repositories` (caller-owned transactions), and Alembic migrations (`0001` empty baseline, `0002` Phase 2a tables)
+- `src/interval_assistance/ingestion` - recording-session open/ingest/close service and sample-to-row mapping (raw row committed first, then the assessment; explicit close only)
 - `frontend/` - React, TypeScript, Vite, Vitest shell
 - `tests/` - `unit`, `integration`, `property` (`replay` is reserved for Phase 2)
