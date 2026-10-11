@@ -6,6 +6,9 @@ from alembic import context
 from sqlalchemy import Connection
 
 from interval_assistance.core.config import get_settings
+from interval_assistance.storage import (
+    models,  # noqa: F401  (registers the tables on Base.metadata)
+)
 from interval_assistance.storage.base import Base
 from interval_assistance.storage.engine import create_db_engine
 

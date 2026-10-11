@@ -1,6 +1,6 @@
 # Development Guide (Phase 1)
 
-Phase 1 foundation only: health/status API, authentication boundary, sensor abstraction with simulator and manual input, SQLAlchemy/Alembic foundation (empty baseline), and a minimal frontend shell. See `SPECIFICATION_REVIEW.md` for scope.
+Phase 1 foundation only: health/status API, authentication boundary, sensor abstraction with simulator and manual input, SQLAlchemy/Alembic foundation (empty baseline `0001`; Phase 2a adds the five-table schema in migration `0002`, with no repositories or ingestion yet), and a minimal frontend shell. See `SPECIFICATION_REVIEW.md` for scope.
 
 ## Backend
 
@@ -47,6 +47,6 @@ npm run lint && npm run typecheck && npm test && npm run build
 - `src/interval_assistance/api` - FastAPI app factory, `/api/v1` routes, authorization seam, error handlers
 - `src/interval_assistance/schemas` - response/error envelopes and health schemas
 - `src/interval_assistance/sensors` - `HeartRateSensor`, in-memory sample, simulator, manual input
-- `src/interval_assistance/storage` - SQLAlchemy base/engine and Alembic migrations (empty baseline)
+- `src/interval_assistance/storage` - SQLAlchemy base/engine, the five Phase 2a table models, and Alembic migrations (`0001` empty baseline, `0002` Phase 2a tables)
 - `frontend/` - React, TypeScript, Vite, Vitest shell
 - `tests/` - `unit`, `integration`, `property` (`replay` is reserved for Phase 2)

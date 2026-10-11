@@ -1,1 +1,1 @@
-"""Persistence foundation. Phase 1 defines no tables; the Alembic baseline is empty."""
+"""Persistence: SQLAlchemy base/engine, Phase 2a table models and Alembic migrations."""

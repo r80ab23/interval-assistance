@@ -15,6 +15,6 @@ NAMING_CONVENTION = {
 
 
 class Base(DeclarativeBase):
-    """Models carry no business logic. No models exist in Phase 1."""
+    """Models carry no business logic (see `models.py` for the Phase 2a tables)."""
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)

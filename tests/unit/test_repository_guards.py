@@ -62,12 +62,26 @@ FORBIDDEN_SOURCE_PATTERNS = {
     r"\bbleak\b": "BLE transport",
     r"navigator\.bluetooth": "browser Bluetooth",
     # `InvalidSensorSample` / `invalid_sensor_sample` is the specified domain error (Phase 2a);
-    # any other SensorSample identifier would be raw-sample persistence, still out of scope.
+    # other SensorSample identifiers are raw-sample persistence, allowed only in the schema files
+    # listed in SENSOR_SAMPLE_SCHEMA_FILES.
     r"(?<!invalid)(?<!invalid_)sensor_?sample": "SensorSample persistence",
     r"\.websocket\(": "WebSocket endpoint",
     r"new WebSocket": "WebSocket client",
     r"import .*\bWebSocket\b": "WebSocket import",
     r"\b(torch|tensorflow|sklearn|keras|xgboost)\b": "ML library",
+}
+
+# Part 2a, Step 2: the only source files that may name the raw-sample table.
+SENSOR_SAMPLE_SCHEMA_FILES = {
+    "src/interval_assistance/storage/models.py",
+    "src/interval_assistance/storage/migrations/versions/0002_phase2a_storage.py",
+}
+PART_2A_TABLES = {
+    "sensor",
+    "recording_session",
+    "sensor_sample",
+    "processing_run",
+    "signal_assessment",
 }
 
 
@@ -130,9 +144,12 @@ def test_source_has_no_out_of_scope_content(pattern: str, label: str) -> None:
     regex = re.compile(pattern, re.IGNORECASE)
     hits = []
     for path in _source_files():
+        rel = path.relative_to(ROOT).as_posix()
+        if label == "SensorSample persistence" and rel in SENSOR_SAMPLE_SCHEMA_FILES:
+            continue
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if regex.search(line):
-                hits.append(f"{path.relative_to(ROOT).as_posix()}:{number}")
+                hits.append(f"{rel}:{number}")
     assert not hits, f"{label}: {hits}"
 
 
@@ -141,9 +158,14 @@ def test_sensor_adapters_do_not_log() -> None:
         assert "logging" not in path.read_text(encoding="utf-8"), path.name
 
 
-def test_no_database_models_in_phase_1() -> None:
+def test_database_models_are_exactly_the_part_2a_tables() -> None:
+    from interval_assistance.storage import models  # noqa: F401
     from interval_assistance.storage.base import Base
 
-    assert dict(Base.metadata.tables) == {}
-    for path in (ROOT / "src").rglob("*.py"):
-        assert "__tablename__" not in path.read_text(encoding="utf-8"), path.name
+    assert set(Base.metadata.tables) == PART_2A_TABLES
+    declaring = {
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "src").rglob("*.py")
+        if "__tablename__" in path.read_text(encoding="utf-8")
+    }
+    assert declaring == {"src/interval_assistance/storage/models.py"}
