@@ -7,7 +7,6 @@ interpolated.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -15,7 +14,11 @@ from enum import StrEnum
 from interval_assistance.sensors.sample import HeartRateSample
 from interval_assistance.signal.config import SignalQualityConfig
 from interval_assistance.signal.reasons import QualityState, ReasonCode, worst_state
-from interval_assistance.signal.validation import is_timezone_aware, validate_sample
+from interval_assistance.signal.validation import (
+    is_finite_number,
+    is_timezone_aware,
+    validate_sample,
+)
 
 
 class TimestampAxis(StrEnum):
@@ -108,6 +111,14 @@ def effective_timestamp(sample: HeartRateSample) -> datetime:
     return timestamp_with_axis(sample)[0]
 
 
+def _jump_exceeds(value: float, previous: float, limit: float) -> bool:
+    try:
+        return abs(value - previous) > limit
+    except OverflowError:
+        # An int beyond float range differs from any float by more than any finite limit.
+        return True
+
+
 def assess_sample(
     sample: HeartRateSample, state: StreamState, config: SignalQualityConfig
 ) -> AssessmentStep:
@@ -133,9 +144,9 @@ def assess_sample(
     value = sample.received_hr
     if (
         value is not None
-        and math.isfinite(value)
+        and is_finite_number(value)
         and state.last_valid_hr is not None
-        and abs(value - state.last_valid_hr) > config.max_jump_bpm
+        and _jump_exceeds(value, state.last_valid_hr, config.max_jump_bpm)
     ):
         reasons.append(ReasonCode.IMPLAUSIBLE_JUMP)
 

@@ -114,3 +114,21 @@ forbidden_modules = [
     "alembic",
     "bleak",
 ]
+
+[[tool.importlinter.contracts]]
+name = "ingestion is used only by higher layers (nothing below it imports it)"
+type = "forbidden"
+source_modules = [
+    "interval_assistance.core",
+    "interval_assistance.sensors",
+    "interval_assistance.signal",
+    "interval_assistance.storage",
+    "interval_assistance.schemas",
+]
+forbidden_modules = ["interval_assistance.ingestion"]
+
+[[tool.importlinter.contracts]]
+name = "ingestion does not depend on api or web frameworks"
+type = "forbidden"
+source_modules = ["interval_assistance.ingestion"]
+forbidden_modules = ["interval_assistance.api", "fastapi", "bleak"]

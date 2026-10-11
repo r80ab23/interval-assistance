@@ -18,6 +18,16 @@ def is_timezone_aware(moment: datetime) -> bool:
     return moment.tzinfo is not None and moment.tzinfo.utcoffset(moment) is not None
 
 
+def is_finite_number(value: float) -> bool:
+    """`math.isfinite` for any number the sample may carry. An int too large to convert to a
+    float raises OverflowError there; such a number is finite (it is simply beyond every float
+    bound, so the configured range check reports it as `impossible_hr`)."""
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return True
+
+
 def validate_sample(sample: HeartRateSample, config: SignalQualityConfig) -> tuple[ReasonCode, ...]:
     """Validation findings for one sample, in a fixed order (value, then timestamp)."""
     findings: list[ReasonCode] = []
@@ -28,7 +38,7 @@ def validate_sample(sample: HeartRateSample, config: SignalQualityConfig) -> tup
         findings.append(
             ReasonCode.MISSING if sample.raw_payload is None else ReasonCode.MALFORMED_SAMPLE
         )
-    elif not math.isfinite(value):
+    elif not is_finite_number(value):
         findings.append(ReasonCode.MALFORMED_SAMPLE)
     elif not config.hr_min_bpm <= value <= config.hr_max_bpm:
         findings.append(ReasonCode.IMPOSSIBLE_HR)

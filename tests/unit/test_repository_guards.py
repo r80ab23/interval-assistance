@@ -71,9 +71,10 @@ FORBIDDEN_SOURCE_PATTERNS = {
     r"\b(torch|tensorflow|sklearn|keras|xgboost)\b": "ML library",
 }
 
-# Part 2a, Step 2: the only source files that may name the raw-sample table.
+# Part 2a: the only source files that may name the raw-sample table (schema and repositories).
 SENSOR_SAMPLE_SCHEMA_FILES = {
     "src/interval_assistance/storage/models.py",
+    "src/interval_assistance/storage/repositories.py",
     "src/interval_assistance/storage/migrations/versions/0002_phase2a_storage.py",
 }
 PART_2A_TABLES = {
