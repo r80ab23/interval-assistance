@@ -1,81 +1,78 @@
 # PROJECT_STATE (canonical live memory)
 
 ## 1. Project identity and objective
-Interval Assistance (`r80ab23/interval-assistance`): research-grade HR interval-training assistance, built in gated phases. Rules in root `CLAUDE.md`.
+Interval Assistance (`r80ab23/interval-assistance`): research-grade HR interval-training assistance in explicitly gated phases. Permanent instructions: root CLAUDE.md and AGENTS.md; normative specifications: docs/.
 
 ## 2. Architecture and dependency boundaries
-`core` / `sensors` / `signal` (pure) / `storage` / `ingestion` / `api`+`schemas`. Enforced by 6 import-linter contracts (see CLAUDE.md). API routes pinned to `/health` and `/status` (`tests/integration/test_api.py`).
+`core` / `sensors` / pure `signal` / `storage` / application `ingestion` / `api`+`schemas`. Six import-linter contracts. Storage does not import domain/sensor/application layers. Repositories own no commits and expose no raw-sample/assessment update/delete. API/frontend remain health/status only.
 
-## 3. Git state (see `git log`/`git status` for current truth)
-- Branch `main`. Local history after approval: `a9e00ee` (storage schema), then `feat(ingestion): add durable signal assessment ingestion` (Step 3 code + tests), then `docs: add project memory and ingestion notes`. All three were authorized for push to `origin/main` (fast-forward from `10ed2cc`); confirm with `git status --short --branch` that local and remote match.
-- Re-run `git status --short --branch` at session start; do not trust this section blindly.
+## 3. Current verified Git state (pre-commit checkpoint)
+- main; HEAD and local origin/main: `51566a535777f5ae7aca695ffe1e4c1f14ec6550`. No local ahead/behind difference. Live remote not queried in this task.
+- Modified tracked: docs/ARCHITECTURE.md, docs/DATA_MODEL.md, docs/DEVELOPMENT.md, docs/SPECIFICATION_REVIEW.md, docs/TESTING_STRATEGY.md, docs/engineering/PROJECT_STATE.md, src/interval_assistance/ingestion/service.py, src/interval_assistance/storage/repositories.py, tests/integration/test_ingestion.py.
+- Untracked Replay files: data/synthetic/replay-basic.fixture.json, src/interval_assistance/ingestion/replay.py, src/interval_assistance/ingestion/replay_fixture.py, tests/integration/test_replay.py, tests/unit/ingestion/test_replay_fixture.py.
+- Existing untracked user AGENTS.md preserved; do not assume it belongs in a future Replay commit.
+- Nothing staged. All Replay work is uncommitted/unpushed; User authorized one local Replay commit on 2026-11-06; push remains prohibited. Earlier approved spec edits are preserved alongside implementation.
 
 ## 4. Current phase and immediate objective
-Phase 2a, Step 3 "Ingestion and Durable Signal Assessment": Step 3 implemented, reviewed and committed. Next milestone: user-defined (not started).
+Phase 2a Replay implementation completed locally and verified; approved by the user. Current task creates one local commit containing the reviewed files, excluding AGENTS.md; no push.
 
 ## 5. Completed work
-- Phases 0, 1 (PR #1), 2a specification (PRs #2-#4), 2a Step 1 signal core (PR #5, merged `10ed2cc`).
-- Step 2 storage schema + migration `0002`: committed locally as `a9e00ee` (unpushed).
-- Step 3 ingestion + assessment-failure recovery + large-number fix: committed (see section 3); details in section 6.
+Phase 1 and Phase 2a specifications, signal core (PR #5), storage schema (`a9e00ee`, migration 0002), ingestion (`198a6f1`), and initial memory (`51566a5`) previously committed/pushed. Replay now adds closed-origin execution, deterministic logical time, provenance, registry reuse, canonical fixture hashing and tests, still uncommitted.
 
 ## 6. In-progress work
-Step 3 is code-complete and committed; the assessment-failure correction (section 8) is implemented in `ingestion/service.py` + 6 new tests in `tests/integration/test_ingestion.py`:
-- `storage/repositories.py`: append-only; only update is `close_recording_session`; never commits.
-- `ingestion/mapping.py`, `ingestion/service.py`: `IngestionService(session_factory, clock, ids)` with `open_session`, `ingest`, `close`. Raw row committed first (txn 1), then assessment + gap (txn 2); in-memory stream state advances only after txn 2. Close persists due stale range, sets `ended_at`, `end_reason="completed"`.
-- Signal fix: ints too large for float no longer raise `OverflowError` (`is_finite_number`, `_jump_exceeds`).
-- Two new import-linter contracts in `pyproject.toml`; guard allowlist updated; `DEVELOPMENT.md` layout updated.
-Remaining: nothing. Step 3 is committed.
+No known unfinished implementation fix. Replay is ready for review, not committed. Full code run passed 461 tests before two additional Replay regression tests; the focused follow-up passed 36 tests. The only initial full-suite failure was an old repository API allowlist omitting the newly approved insert_sensor operation; updated exactly that allowlist while retaining no-update/delete assertions. No application code changed after the successful final test run.
 
 ## 7. Next actions
-1. Verify the push landed (`git status` shows no ahead/behind).
-2. Then plan the next step (user-defined).
+1. Verify the local Replay commit and working tree after committing; preserve separate untracked user AGENTS.md.
+2. Push only after explicit authorization. Do not start another feature automatically.
+3. Decide METHOD_VERSION convention when required; keep the current value meanwhile.
 
 ## 8. Important decisions
-- Ingestion uses an existing sensor; never creates/registers one (confirmed).
-- Session closes only via explicit `close()`; no shutdown/restart recovery or auto-close (confirmed).
-- `is_synthetic` fixed at open; mismatching samples rejected before any write or state change (confirmed).
-- Finite-value validation and non-finite-to-marker conversion stay in ingestion; no numeric CHECK constraint, no schema change (confirmed).
-- `end_reason="completed"` is in the documented vocabulary (DATA_MODEL 4.4a `completed | interrupted`, DB CHECK in `0002`) (confirmed by docs; using it for explicit close is still my choice).
-- Sensor-kind vs `source_kind` compatibility is NOT required by docs, so it is intentionally unchecked (confirmed by docs).
-- FIXED false A->C gap. When a committed raw sample's assessment persistence fails, `unassessed_pending` is set and the stream state does NOT advance. The next assessed sample is evaluated against an empty `StreamState` (no gap, duplicate, out-of-order or jump finding across the missing sample). Consecutive failures keep the flag; it clears only after a later assessment transaction commits, and only then does the stream state advance. No `GOOD` is fabricated; raw-first two-transaction persistence unchanged (confirmed; option (b) chosen by user).
-- Stale: `close()` evaluates `stale` from the latest `received_at` among ALL committed raw samples, assessed or not (tracked in the service as `max_received_at`/`max_received_sample_id`, updated right after the raw commit, independent of assessment); `after_sample_id` is the first sample holding that maximum, possibly an unassessed one. After a restart the stream state's `max_received_at` is kept equal to this overall maximum. The flag and these fields are in memory only (sessions are not resumable). APPROVED by user; consistent with DATA_MODEL/ARCHITECTURE (stale = open range from the last received sample to the injected `now`).
-- Replay sessions rejected at open; simulated/manual sessions must be synthetic (implemented, provisional).
-- `METHOD_VERSION="1"` (UNCHANGED, still needs a project decision; DATA_MODEL only says "a string bumped on any rule change", no convention).
-- Explicit close uses `end_reason="completed"` (provisional; `interrupted` reserved for dead-process sessions, not handled).
-- Huge int beyond float range: signal layer says `impossible_hr`; mapper raises `ValueError` before any write (provisional).
+- Approved Replay contracts: DATA_MODEL 4.6a.1-3, TESTING_STRATEGY 6, SPECIFICATION_REVIEW decisions 18-22. Required explicit config, logical_start_utc, close_elapsed_seconds and speed; no physiological defaults.
+- Closed origin only, fixed sequence-order snapshot, empty/replay-of-replay allowed. Original timestamps/payload/synthetic flag preserved; new session/run/IDs and immediate origin links; assessments recomputed, never copied.
+- Logical elapsed follows origin elapsed; sleep only paces. Explicit close uses the approved completed reason and must commit before reporting completion. First failure/cancellation is terminal, without retry/resume/auto-close; failed destination may remain open.
+- Registry identity exactly (replay, interval-assistance.replay): reuse one, create/commit zero, reject multiple. In-process serialized only, no schema uniqueness or cross-process guarantee. Generic ingestion still requires a registered sensor and rejects Replay at its public open seam.
+- Fixture format replay-fixture-stream/1: compact sorted UTF-8 JSON, six sample fields, finite HR bit hex/nonfinite class, UTC microseconds, Base64 payload. String whitespace preserved; no syntactic whitespace. Hash is before SQLite storage.
+- Ingestion raw-first transactions unchanged: raw commit precedes assessment commit; state advances only after assessment commit. Failure sets unassessed_pending; next successful sample starts comparison from empty state, so no false bridge findings. No GOOD fabricated.
+- Stale references maximum received_at among all committed raw rows, including unassessed; first holder supplies after_sample_id. This is independent of comparison-state reset. No restart recovery.
+- Session synthetic flag fixed at open; mismatches rejected before writes. Sensor-kind/source-kind mapping intentionally absent. Nonfinite conversion enforced in ingestion; DB CHECK only excludes simultaneous marker/value. Huge finite integers outside float storage raise before writes.
 
-## 9. Unresolved questions and blockers
-- Confirm `METHOD_VERSION="1"` (docs only say "a string bumped on any rule change"; left unchanged).
-- RESOLVED: assessment-failure behavior (section 8). Residual: findings involving the unassessed sample itself are never produced. Docs (DATA_MODEL 2.2) only say unassessed != GOOD and "Part 2a does not repair this"; they do not describe the restart behavior - consider one sentence there (not done; user's call).
-- Minor: `list_signal_assessments` orders by (`created_at`, `id`); rows created in the same instant order by random id (cosmetic, tests don't depend on it).
-- Edge: if a commit raised after actually committing, the unspent sequence would collide on the next insert (UNIQUE) and fail loudly; not silent.
-- A naive device timestamp is stored NULL and cannot be reproduced when re-folding stored rows.
-- `source_kind` vs sensor kind compatibility is not checked (no mapping defined).
-- Stale range `after_sample_id` = first sample holding the max `received_at`.
-- Sessions exist only in the opening process; no resume.
-- PostgreSQL runtime untested (DDL compilation only).
+## 9. Unresolved questions and limitations
+- METHOD_VERSION="1" unchanged; concrete versioning convention remains OPEN, not resolved by Replay.
+- Naive device timestamps stored as NULL cannot recreate historical invalid_timestamp findings; formerly unassessed rows receive fresh assessments. Replay equality is between equivalent executions, not guaranteed with historical origin assessments.
+- No cross-process registry protection, concurrent session writers, retry/resume or automatic disposition of failed open destinations.
+- Processing an origin holds its fixed sample set in memory; large-stream scaling is not implemented.
+- Existing assessment listing sorts (created_at,id); ties need not be meaningful. A transaction commit that succeeds but raises afterward remains an unresolved failure ambiguity; no automatic recovery is claimed.
+- PostgreSQL runtime untested; DDL compilation only. Frontend unchanged and not rerun for Replay.
 
-## 10. Verification record (current code)
-- `ruff check .`: passed. `ruff format --check .`: 80 files formatted.
-- `mypy`: no issues, 67 source files. `lint-imports`: 6 kept, 0 broken.
-- `pytest -q`: 421 passed, 1 warning (Starlette/httpx deprecation).
-- Alembic (scratch SQLite): head `0002`, upgrade, check ("No new upgrade operations"), downgrade to base all OK.
-- `git diff --check`: clean. No frontend checks were run in this step.
-Fresh run in the finalization task (after the one-sentence DATA_MODEL edit): `ruff check .` passed; `ruff format --check .` 82 files formatted; `mypy` no issues in 67 files; `lint-imports` 6 kept, 0 broken; `pytest -q` 427 passed, 1 warning; `git diff --check` clean (fresh). Alembic cycle NOT re-run for the correction (no schema/migration change; last run before it was OK). PostgreSQL runtime NOT performed (DDL compilation only).
-Final diff review (read-only; no code changed; no scope creep, transaction boundaries, import contracts, append-only repositories, guard allowlist and docs claims all consistent; no doc claims PostgreSQL runtime verification) found: raw-first durability, sequence gap-freeness, pre-write rejection of mismatches and huge ints, atomic close with retry, existing-sensors-only all hold and are tested.
+## 10. Verification record
+2026-11-06 narrow follow-up: added only two tests in tests/integration/test_replay.py (third assessment fails after two committed successes; nonempty two-generation Replay immediate provenance and unchanged origins). Clarified historical vs subsequent implementation authorization in docs/SPECIFICATION_REVIEW.md. No runtime code changed.
+- `.venv/Scripts/python -m pytest -q tests/integration/test_replay.py tests/unit/ingestion/test_replay_fixture.py --basetemp .pytest_cache/replay-nov6-extra`: 36 passed, 1 existing Starlette/httpx warning, 8.70s.
+- Ruff check and format check on tests/integration/test_replay.py passed; git diff --check passed (only existing CRLF normalization warning). Full suite, mypy, import-linter and migrations not rerun for these test/documentation-only edits; prior results below are historical. HEAD unchanged, nothing staged/committed/pushed. Next action: explicit user approval for commit scope.
 
-## 11. Relevant files
-- `src/interval_assistance/signal/`: pure quality assessment (`assess_sample`, `evaluate_stale`, `check_identity`).
-- `src/interval_assistance/storage/models.py`, migration `0002`: five tables; `repositories.py`: append-only access.
-- `src/interval_assistance/ingestion/{mapping,service}.py`: row mapping; open/ingest/close.
-- Tests: `tests/integration/test_ingestion.py`, `tests/unit/ingestion/`, `tests/unit/signal/test_large_numbers.py`, `tests/unit/test_import_contracts.py`, `tests/unit/test_repository_guards.py`; shared helpers `tests/unit/signal/helpers.py`.
-- Docs: `docs/DATA_MODEL.md` (4.x tables), `ARCHITECTURE.md` (5.1a), `DEVELOPMENT.md`.
+Observed 2026-11-05 before the final documentation-only checkpoint (not rerun or inferred from CI):
+- `.venv/Scripts/python -m pytest -q --basetemp .pytest_cache/replay-final-nov5b`: 461 passed, 1 warning in 37.68s. Warning: existing Starlette/httpx deprecation.
+- `.venv/Scripts/python -m ruff check .`: passed.
+- `.venv/Scripts/python -m ruff format --check .`: 87 files already formatted.
+- `.venv/Scripts/python -m mypy`: no issues in 71 source files.
+- `.venv/Scripts/lint-imports`: 6 kept, 0 broken (71 files, 234 dependencies).
+- Scratch SQLite via TemporaryDirectory + make_alembic_config: command.upgrade(head), command.check, command.downgrade(base) passed; "No new upgrade operations detected." No local/project database used.
+- Initial full run: 458 passed, 1 failed, 1 warning (old repository mutation allowlist); fixed and superseded by final run above. Restricted runs stalled or could not create temporary resources and were cancelled; successful tests used approved elevated execution. Earlier Nov4 elevation attempt was rejected for usage limit and did not run.
+- Final checkpoint: git diff --check and fresh status/staged/HEAD inspection; documentation-only edits after tests, no need to repeat the suite. No live GitHub/CI or PostgreSQL runtime checks. Earlier 427-test result belongs to committed ingestion, not Replay.
+
+## 11. Relevant files and responsibilities
+- ingestion/replay.py: preflight, logical clock, registry identity, execution lifecycle, safe failure context; private provenance seams in ingestion/service.py preserve existing transaction behavior.
+- ingestion/replay_fixture.py: exact canonical bytes and SHA-256; data/synthetic/replay-basic.fixture.json: synthetic metadata only.
+- storage/repositories.py: minimal exact-identity lookup and sensor insert, caller-owned transactions.
+- tests/integration/test_replay.py: deterministic pacing/provenance, failures, registry, closed origins, fresh assessment, fixture round trip and time boundaries; tests/unit/ingestion/test_replay_fixture.py: canonical bytes/digest and encoding vectors.
+- tests/integration/test_ingestion.py: only mutation allowlist expanded for insert_sensor.
+- docs/DEVELOPMENT.md: Replay invocation; normative contracts in DATA_MODEL/TESTING_STRATEGY/ARCHITECTURE/SPECIFICATION_REVIEW.
 
 ## 12. Scope restrictions and approval requirements
-Out of scope until approved: API/WebSocket/UI, replay, sensor registration, config loading/new settings, BLE/Polar, interval engine, interpolation/correction/reassessment, restart recovery, PostgreSQL runtime, schema/migration changes, concurrent ingestion, new physiology formulas/thresholds. No commit/push/merge without explicit instruction.
+No new schema/migration, dependency, API/UI/WebSocket, BLE/Polar, interval engine, physiology, ML, correction/filtering, production auth or runtime PostgreSQL setup. README unchanged. No staging/commit/push/merge or branch changes without explicit authorization.
 
 ## 13. Resume instructions
-Run `git status --short --branch`; ask the user whether to commit Step 3. Revalidate checks if code changed. Do not start new features.
+Read permanent instructions and this memory, verify real Git status/HEAD, then inspect the local Replay commit (or pending diff if the commit failed). Do not repeat completed implementation or treat saved status as live proof. Preserve user AGENTS.md. Commit authorization was granted on 2026-11-06; the next gate after local commit is explicit push authorization.
 
 ## 14. Last updated
-unknown (date not reliably determinable); updated after the final Step 3 diff review.
+2026-11-06 (Asia/Tehran); local commit authorized, pre-commit checkpoint. This file is included in that commit; its own commit SHA must be obtained from Git rather than embedded here. Push is not authorized.

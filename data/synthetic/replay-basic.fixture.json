@@ -1,0 +1,20 @@
+{
+  "fixture_id": "replay-basic",
+  "format_version": "1",
+  "is_synthetic": true,
+  "generator": "simulator",
+  "software_version": "0.1.0",
+  "parameters": {
+    "seed": 17,
+    "start_value": 15.0,
+    "min_value": 10.0,
+    "max_value": 20.0,
+    "max_step": 2.0,
+    "interval_seconds": 1.0,
+    "speed": 1
+  },
+  "clock_start_utc": "2026-01-01T12:00:00+00:00",
+  "sample_count": 6,
+  "stream_hash_format": "replay-fixture-stream/1",
+  "stream_sha256": "9e4570fb503d9fdc8e8c43ae066a92e172f62bd31dd9a83c9d354a52d886375e"
+}

@@ -199,6 +199,18 @@ Owner decisions on the stateful signal-quality semantics (PR #5 review):
 | 16 | Invalid arrivals | An invalid sample is still a receive event for `gap` and `stale`; validity and arrival are kept separate. State precedence and reason-to-state mapping are unchanged. | SCIENTIFIC 5.1 |
 | 17 | Receive-time references | `gap` uses the `received_at` of the last-arrived sample in arrival order (unchanged); `stale` uses the maximum `received_at` observed, which an older later-arriving sample cannot lower. `received_at` is always present and timezone-aware (sample invariant), so no missing-receive-time handling is needed. | SCIENTIFIC 5.1 |
 
+Owner-approved Replay clarification (2026-10-28; documentation-only approval at that time; implementation subsequently authorized on 2026-11-04):
+
+| # | Topic | Decision | Where |
+|---|---|---|---|
+| 18 | Logical time | Explicit start UTC, close elapsed and positive speed; origin elapsed drives a logical clock independent of sleep. Preserve receive/device times; reject invalid schedules before writes. | DATA_MODEL 4.6a.2 |
+| 19 | Fixture hash | Versioned compact UTF-8 JSON, sorted ASCII keys, six sample fields; finite HR as big-endian binary64 hex, explicit non-finite classes, fixed UTC text and Base64 payload. Hash generated data before storage; metadata validated separately. | TESTING 6 |
+| 20 | Origin eligibility | Closed consistent origin only; sequence-ordered fixed read, empty origin and replay-of-replay permitted; explicit config and fresh assessments. | DATA_MODEL 4.6a.1 |
+| 21 | Failure/completion | Stop on first error/cancellation; no retry/resume or auto-close. Preserve raw-first failure semantics; failed destination can stay open. Explicit successful close uses completed. | DATA_MODEL 4.6a.3 |
+| 22 | Replay sensor identity | Exact pair `kind=replay`, `external_identifier=interval-assistance.replay`: one match reuses UUID, zero creates/commits via injected ID/Clock after validation and before destination, multiple matches fail as ambiguous. Other entries are not adopted; identity is shared across origins/configurations. Serialized registration, no cross-process uniqueness guarantee or schema change. | DATA_MODEL 4.6a.1 |
+
+Replay registry identity is owner-approved; generic ingestion still never registers sensors. Hash serialization omits syntactic whitespace outside strings while preserving spaces inside string values. METHOD_VERSION remains unchanged and OPEN. No production data, new threshold or schema change is approved here.
+
 ### 12.2 Remaining OPEN items
 
 - **Naive `device_timestamp` preservation (documented limitation; OPEN for owner approval).** The table has only a UTC `device_timestamp` column, so a naive wall-clock value has nowhere to be stored without inventing a time zone or adding a column. The existing sample contract cannot preserve it either: `raw_payload` holds only bytes the adapter actually supplied, and ingestion must not fabricate or re-serialize one. Part 2a therefore stores NULL, flags `invalid_timestamp`, and **the original value is lost unless the adapter-supplied payload carries it**. This is a bounded exception to the raw-first guarantee, not a silent one. It is latent in Part 2a (no Part 2a source supplies a `device_timestamp`). Options for the owner: (a) accept the limitation, (b) require adapters that supply device timestamps to also supply a payload carrying them, (c) add a nullable text column for the unparsed value. No column is added without approval. A decision is needed before Part 2b (the first adapter that may supply device timestamps); it does not block Part 2a.

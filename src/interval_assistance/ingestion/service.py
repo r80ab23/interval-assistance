@@ -104,12 +104,28 @@ class IngestionService:
         is_synthetic: bool,
         config: SignalQualityConfig,
     ) -> OpenedSession:
+        if source_kind is SourceKind.REPLAY:
+            raise ValueError("replay sessions require the replay service")
+        return self._open_session(
+            sensor_id=sensor_id,
+            source_kind=source_kind,
+            is_synthetic=is_synthetic,
+            config=config,
+        )
+
+    def _open_session(
+        self,
+        *,
+        sensor_id: uuid.UUID,
+        source_kind: SourceKind,
+        is_synthetic: bool,
+        config: SignalQualityConfig,
+        origin_recording_session_id: uuid.UUID | None = None,
+    ) -> OpenedSession:
         """Create a recording session and its one processing run in a single transaction.
 
         The sensor must already be registered; none is created. The session's `is_synthetic`
         is fixed here and every sample must match it."""
-        if source_kind is SourceKind.REPLAY:
-            raise ValueError("replay sessions are not supported in this step")
         if source_kind in _SYNTHETIC_SOURCES and not is_synthetic:
             raise ValueError("simulated and manual sessions must be flagged synthetic")
 
@@ -137,7 +153,7 @@ class IngestionService:
                 signal_quality_config_id=config.config_id,
                 signal_quality_config_version=config.config_version,
                 signal_quality_config_hash=config.config_hash(),
-                origin_recording_session_id=None,
+                origin_recording_session_id=origin_recording_session_id,
             )
             repositories.insert_processing_run(
                 db,
@@ -163,6 +179,15 @@ class IngestionService:
         return OpenedSession(session_id, run_id)
 
     def ingest(self, session_id: uuid.UUID, sample: HeartRateSample) -> IngestedSample:
+        return self._ingest(session_id, sample)
+
+    def _ingest(
+        self,
+        session_id: uuid.UUID,
+        sample: HeartRateSample,
+        *,
+        origin_sample_id: uuid.UUID | None = None,
+    ) -> IngestedSample:
         """Persist `sample` as received, then assess it. Raises `InvalidSensorSample` for a
         delivery-contract violation before anything is written or any state moves."""
         active = self._require_active(session_id)
@@ -178,6 +203,8 @@ class IngestionService:
             ingestion_timestamp=self._clock.now_utc(),
             elapsed_seconds=self._clock.monotonic() - active.monotonic_origin,
         )
+
+        values["origin_sample_id"] = origin_sample_id
 
         # Transaction 1: the raw row, before validation or signal quality.
         with self._factory() as db, db.begin():

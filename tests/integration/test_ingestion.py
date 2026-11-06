@@ -574,6 +574,7 @@ def test_repositories_expose_no_update_or_delete_for_raw_samples_or_assessments(
         "insert_processing_run",
         "insert_raw_sample",
         "insert_recording_session",
+        "insert_sensor",
         "insert_signal_assessment",
     ]
 

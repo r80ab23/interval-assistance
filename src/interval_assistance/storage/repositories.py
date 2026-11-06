@@ -6,7 +6,8 @@ Transaction ownership belongs to the application service.
 
 Raw samples and assessments are append-only (DATA_MODEL.md 4.6, 4.7): there is no update or
 delete for them. The only update is `close_recording_session`, which sets `ended_at` and
-`end_reason` once on an open recording session. Sensors are read but never created here.
+`end_reason` once on an open recording session. Sensor insertion is used only by replay
+registration; generic ingestion does not register sensors.
 """
 
 from __future__ import annotations
@@ -116,3 +117,21 @@ def list_signal_assessments(db: Session, run_id: uuid.UUID) -> list[SignalAssess
         .order_by(SignalAssessment.created_at, SignalAssessment.id)
     )
     return list(db.execute(statement).scalars())
+
+
+def find_sensors(db: Session, *, kind: str, external_identifier: str) -> list[Sensor]:
+    return list(
+        db.scalars(
+            select(Sensor).where(
+                Sensor.kind == kind,
+                Sensor.external_identifier == external_identifier,
+            )
+        )
+    )
+
+
+def insert_sensor(db: Session, **values: Any) -> Sensor:
+    row = Sensor(**values)
+    db.add(row)
+    db.flush()
+    return row

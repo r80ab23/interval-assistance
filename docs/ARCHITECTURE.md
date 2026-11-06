@@ -176,6 +176,8 @@ Normalized sample emitted by every adapter (PROPOSED fields): value as received,
 | Manual input | Coach/developer-entered HR; flagged `manual`. **Phase 1**, in-memory only. |
 | Polar H10 / real BLE transport | **Boundary only in Phase 1 and Part 2a. Part 2b** (separately gated, after verification and approval). See 7.3. |
 
+Replay uses only closed origins, a logical clock independent of pacing, and explicit close. It stops on the first failure without automatic closure; a failed destination can remain open. The approved timing, provenance and failure contract is DATA_MODEL 4.6a.1-3; the fixture hash is TESTING_STRATEGY 6. Registry creation/retrieval belongs to replay orchestration, not generic ingestion. Implementation: `ingestion/replay.py`; canonical fixture encoding: `ingestion/replay_fixture.py`.
+
 The normalized sample in 7.1 is an in-memory domain/contract type in Phase 1. It has no database table until Part 2a (`SensorSample`, `DATA_MODEL.md` 4.6).
 
 ### 7.3 Polar H10 boundary

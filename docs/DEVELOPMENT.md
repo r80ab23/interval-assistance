@@ -1,6 +1,6 @@
-# Development Guide (Phase 1)
+# Development Guide
 
-Phase 1 foundation only: health/status API, authentication boundary, sensor abstraction with simulator and manual input, SQLAlchemy/Alembic foundation (empty baseline `0001`; Phase 2a adds the five-table schema in migration `0002`, with no repositories or ingestion yet), and a minimal frontend shell. See `SPECIFICATION_REVIEW.md` for scope.
+Phase 1 foundation plus Phase 2a signal assessment, five-table storage (`0002`), ingestion and closed-session Replay. The API and frontend remain a health/status shell. See `SPECIFICATION_REVIEW.md` for scope.
 
 ## Backend
 
@@ -50,4 +50,12 @@ npm run lint && npm run typecheck && npm test && npm run build
 - `src/interval_assistance/storage` - SQLAlchemy base/engine, the five Phase 2a table models, and the append-only `repositories` (caller-owned transactions), and Alembic migrations (`0001` empty baseline, `0002` Phase 2a tables)
 - `src/interval_assistance/ingestion` - recording-session open/ingest/close service and sample-to-row mapping (raw row committed first, then the assessment; explicit close only)
 - `frontend/` - React, TypeScript, Vite, Vitest shell
-- `tests/` - `unit`, `integration`, `property` (`replay` is reserved for Phase 2)
+- `tests/` - `unit`, `integration`, `property` (Replay integration tests are in `tests/integration/test_replay.py`)
+
+## Replay (Phase 2a)
+
+Use `ingestion.replay.ReplayService(session_factory, ids, sleep=...)` with an injectable asynchronous pacing function (default: `asyncio.sleep`). Call `open(origin_session_id, config=..., logical_start_utc=..., close_elapsed_seconds=..., speed=...)` with all four inputs explicit. The origin must be closed. Then `await execution.run_samples()` and explicitly `execution.close()`; `completed` becomes true only after close commits.
+
+The logical clock follows stored elapsed offsets; sleep affects pacing only. Original receive/device timestamps are retained. Each destination has new IDs and assessments linked to the immediate origin. The exact Replay registry identity is reused or registered separately from generic ingestion. Failures stop the execution without retry or automatic close; a failed destination may remain open. Registration is serialized only within this process. There is no restart recovery or new API endpoint.
+
+Synthetic fixture metadata is in `data/synthetic/replay-basic.fixture.json`; stream hashing and its fixed byte/digest vector are tested in `tests/unit/ingestion/test_replay_fixture.py`. Tests use temporary migrated SQLite databases; PostgreSQL runtime behavior has not been verified.
