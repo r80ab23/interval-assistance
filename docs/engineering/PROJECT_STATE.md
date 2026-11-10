@@ -6,25 +6,21 @@ Interval Assistance (`r80ab23/interval-assistance`): research-grade HR interval-
 ## 2. Architecture and dependency boundaries
 `core` / `sensors` / pure `signal` / `storage` / application `ingestion` / `api`+`schemas`. Six import-linter contracts. Storage does not import domain/sensor/application layers. Repositories own no commits and expose no raw-sample/assessment update/delete. API/frontend remain health/status only.
 
-## 3. Current verified Git state (pre-commit checkpoint)
-- main; HEAD and local origin/main: `51566a535777f5ae7aca695ffe1e4c1f14ec6550`. No local ahead/behind difference. Live remote not queried in this task.
-- Modified tracked: docs/ARCHITECTURE.md, docs/DATA_MODEL.md, docs/DEVELOPMENT.md, docs/SPECIFICATION_REVIEW.md, docs/TESTING_STRATEGY.md, docs/engineering/PROJECT_STATE.md, src/interval_assistance/ingestion/service.py, src/interval_assistance/storage/repositories.py, tests/integration/test_ingestion.py.
-- Untracked Replay files: data/synthetic/replay-basic.fixture.json, src/interval_assistance/ingestion/replay.py, src/interval_assistance/ingestion/replay_fixture.py, tests/integration/test_replay.py, tests/unit/ingestion/test_replay_fixture.py.
-- Existing untracked user AGENTS.md preserved; do not assume it belongs in a future Replay commit.
-- Nothing staged. All Replay work is uncommitted/unpushed; User authorized one local Replay commit on 2026-11-06; push remains prohibited. Earlier approved spec edits are preserved alongside implementation.
+## 3. Current verified Git state
+2026-11-10: main and local origin/main at f8b91eb3f6b2ac96509c6c78c38ee4fcbeff2233 (Replay committed and pushed 2026-11-06). Uncommitted: this memory file and the mypy typing fix in tests/integration/test_replay.py. AGENTS.md untracked and untouched. Nothing staged. Older OneDrive copy (OneDrive/Documents/GitHub/interval-assistance, cd09719, 12 behind, docs only) is obsolete; this checkout is canonical.
 
 ## 4. Current phase and immediate objective
-Phase 2a Replay implementation completed locally and verified; approved by the user. Current task creates one local commit containing the reviewed files, excluding AGENTS.md; no push.
+Phase 2a complete. Immediate objective: user decides commit/push of the mypy fix, then the next phase (not started; needs explicit approval).
 
 ## 5. Completed work
-Phase 1 and Phase 2a specifications, signal core (PR #5), storage schema (`a9e00ee`, migration 0002), ingestion (`198a6f1`), and initial memory (`51566a5`) previously committed/pushed. Replay now adds closed-origin execution, deterministic logical time, provenance, registry reuse, canonical fixture hashing and tests, still uncommitted.
+Phase 1 and Phase 2a specifications, signal core (PR #5), storage schema (`a9e00ee`, migration 0002), ingestion (`198a6f1`), memory (`51566a5`), Replay (`f8b91eb`: closed-origin execution, deterministic logical time, provenance, registry reuse, canonical fixture hashing, tests). 2026-11-10: user-authorized fix of the CI mypy failure: `fail_third` in tests/integration/test_replay.py now typed `(db: Session, **values: Any) -> SignalAssessment`, matching `second_call_fails` in test_ingestion.py. Test-only; no runtime code changed.
 
 ## 6. In-progress work
-No known unfinished implementation fix. Replay is ready for review, not committed. Full code run passed 461 tests before two additional Replay regression tests; the focused follow-up passed 36 tests. The only initial full-suite failure was an old repository API allowlist omitting the newly approved insert_sensor operation; updated exactly that allowlist while retaining no-update/delete assertions. No application code changed after the successful final test run.
+None. Mypy fix verified locally, not committed/pushed.
 
 ## 7. Next actions
-1. Verify the local Replay commit and working tree after committing; preserve separate untracked user AGENTS.md.
-2. Push only after explicit authorization. Do not start another feature automatically.
+1. Commit and push the mypy fix only on explicit authorization; confirm CI turns green.
+2. User questions raised 2026-11-10 (unanswered): AGENTS.md tracked or local-only and which commit trailer (AGENTS.md says Codex, CLAUDE.md says Claude Sonnet 5.5, current session model Claude Opus 5.5); local .venv is Python 3.14.7 while CI uses 3.12; whether to create a local .env; which phase next (Part 2b transport choice OPEN).
 3. Decide METHOD_VERSION convention when required; keep the current value meanwhile.
 
 ## 8. Important decisions
@@ -46,6 +42,10 @@ No known unfinished implementation fix. Replay is ready for review, not committe
 - PostgreSQL runtime untested; DDL compilation only. Frontend unchanged and not rerun for Replay.
 
 ## 10. Verification record
+2026-11-10 (Python 3.14.7 local .venv; caches redirected outside repo): before fix, full pytest 463 passed, 1 Starlette/httpx warning; mypy reproduced exactly the two CI errors; frontend vitest 13 passed, tsc --noEmit clean. After fix: `ruff check .` passed; `ruff format --check .` 87 files formatted; `mypy` no issues in 71 source files; `lint-imports` 6 kept, 0 broken; `pytest -q` 463 passed, 1 warning (50.14s); git diff --check clean. Alembic not run (no schema change). CI not rerun (nothing pushed).
+
+2026-11-06 push/CI: git ls-remote confirmed remote 51566a5 equals parent of f8b91eb; git push origin main succeeded fast-forward. Remote verified at full f8b91eb SHA. CI run 42172296343 (push, exact head f8b91eb) completed FAILURE: backend Mypy failed with two arg-type errors at tests/integration/test_replay.py:381 (expected Session, got forwarded object args); frontend SUCCESS. Logs fetched via gh run view --job 127742689513 --log-failed. Earlier successful mypy predates the two added tests and does not cover them. No code fix or new commit performed. Initial restricted network lookup failed DNS; elevated lookup/push succeeded.
+
 2026-11-06 narrow follow-up: added only two tests in tests/integration/test_replay.py (third assessment fails after two committed successes; nonempty two-generation Replay immediate provenance and unchanged origins). Clarified historical vs subsequent implementation authorization in docs/SPECIFICATION_REVIEW.md. No runtime code changed.
 - `.venv/Scripts/python -m pytest -q tests/integration/test_replay.py tests/unit/ingestion/test_replay_fixture.py --basetemp .pytest_cache/replay-nov6-extra`: 36 passed, 1 existing Starlette/httpx warning, 8.70s.
 - Ruff check and format check on tests/integration/test_replay.py passed; git diff --check passed (only existing CRLF normalization warning). Full suite, mypy, import-linter and migrations not rerun for these test/documentation-only edits; prior results below are historical. HEAD unchanged, nothing staged/committed/pushed. Next action: explicit user approval for commit scope.
@@ -72,7 +72,7 @@ Observed 2026-11-05 before the final documentation-only checkpoint (not rerun or
 No new schema/migration, dependency, API/UI/WebSocket, BLE/Polar, interval engine, physiology, ML, correction/filtering, production auth or runtime PostgreSQL setup. README unchanged. No staging/commit/push/merge or branch changes without explicit authorization.
 
 ## 13. Resume instructions
-Read permanent instructions and this memory, verify real Git status/HEAD, then inspect the local Replay commit (or pending diff if the commit failed). Do not repeat completed implementation or treat saved status as live proof. Preserve user AGENTS.md. Commit authorization was granted on 2026-11-06; the next gate after local commit is explicit push authorization.
+Read permanent instructions and this memory, verify real Git status/HEAD, then inspect the pending diff (mypy fix + this file). Do not repeat completed implementation or treat saved status as live proof. Preserve user AGENTS.md. No commit or push is currently authorized; earlier authorizations do not carry over.
 
 ## 14. Last updated
-2026-11-06 (Asia/Tehran); local commit authorized, pre-commit checkpoint. This file is included in that commit; its own commit SHA must be obtained from Git rather than embedded here. Push is not authorized.
+2026-11-10; mypy fix verified, uncommitted. Push is not authorized.

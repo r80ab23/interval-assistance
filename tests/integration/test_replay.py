@@ -6,10 +6,12 @@ import asyncio
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alembic import command
 from sqlalchemy import Engine, select
+from sqlalchemy.orm import Session
 
 from interval_assistance.core.clock import ManualClock
 from interval_assistance.ingestion.replay import (
@@ -21,7 +23,12 @@ from interval_assistance.ingestion.replay import (
 from interval_assistance.storage import repositories
 from interval_assistance.storage.alembic_helpers import make_alembic_config
 from interval_assistance.storage.engine import create_db_engine
-from interval_assistance.storage.models import RecordingSession, Sensor, SensorSample
+from interval_assistance.storage.models import (
+    RecordingSession,
+    Sensor,
+    SensorSample,
+    SignalAssessment,
+)
 from tests.integration.test_ingestion import Env, boom
 from tests.unit.signal.helpers import T0, make_config, sample
 
@@ -373,12 +380,12 @@ async def test_failure_after_committed_progress(env: Env, monkeypatch: pytest.Mo
     original_insert = repositories.insert_signal_assessment
     calls = 0
 
-    def fail_third(*args: object, **kwargs: object) -> object:
+    def fail_third(db: Session, **values: Any) -> SignalAssessment:
         nonlocal calls
         calls += 1
         if calls == 3:
             raise RuntimeError("injected assessment failure")
-        return original_insert(*args, **kwargs)
+        return original_insert(db, **values)
 
     async def sleep(delay: float) -> None:
         pass
